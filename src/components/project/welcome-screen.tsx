@@ -3,6 +3,7 @@ import { FolderOpen, Plus, Clock, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getRecentProjects, removeFromRecentProjects } from "@/lib/project-store"
 import type { WikiProject } from "@/types/wiki"
+import { useTranslation } from "react-i18next"
 
 interface WelcomeScreenProps {
   onCreateProject: () => void
@@ -15,6 +16,7 @@ export function WelcomeScreen({
   onOpenProject,
   onSelectProject,
 }: WelcomeScreenProps) {
+  const { t } = useTranslation()
   const [recentProjects, setRecentProjects] = useState<WikiProject[]>([])
 
   useEffect(() => {
@@ -32,20 +34,20 @@ export function WelcomeScreen({
     <div className="flex h-full items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-8 px-4">
         <div className="text-center">
-          <h1 className="text-3xl font-bold">LLM Wiki</h1>
+          <h1 className="text-3xl font-bold">{t("app.title")}</h1>
           <p className="mt-2 text-muted-foreground">
-            Build and maintain your personal knowledge base with LLMs
+            {t("app.subtitle")}
           </p>
         </div>
 
         <div className="flex gap-3">
           <Button onClick={onCreateProject}>
             <Plus className="mr-2 h-4 w-4" />
-            New Project
+            {t("welcome.newProject")}
           </Button>
           <Button variant="outline" onClick={onOpenProject}>
             <FolderOpen className="mr-2 h-4 w-4" />
-            Open Project
+            {t("welcome.openProject")}
           </Button>
         </div>
 
@@ -53,7 +55,7 @@ export function WelcomeScreen({
           <div className="w-full max-w-md">
             <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="h-3.5 w-3.5" />
-              Recent Projects
+              {t("welcome.recentProjects")}
             </div>
             <div className="rounded-lg border">
               {recentProjects.map((proj) => (

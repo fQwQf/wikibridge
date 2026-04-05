@@ -7,8 +7,10 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { copyFile, listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { startIngest, autoIngest } from "@/lib/ingest"
+import { useTranslation } from "react-i18next"
 
 export function SourcesView() {
+  const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
   const selectedFile = useWikiStore((s) => s.selectedFile)
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
@@ -123,7 +125,7 @@ export function SourcesView() {
     if (!project) return
     const fileName = node.name
     const confirmed = window.confirm(
-      `Delete "${fileName}" and its related wiki pages?\n\nThis will:\n- Delete the source file\n- Delete wiki pages generated from this source\n- Update index.md`
+      t("sources.deleteConfirm", { name: fileName })
     )
     if (!confirmed) return
 
@@ -194,14 +196,14 @@ export function SourcesView() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">Raw Sources</h2>
+        <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
         <div className="flex gap-1">
           <Button variant="ghost" size="icon" onClick={loadSources} title="Refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button size="sm" onClick={handleImport} disabled={importing}>
             <Plus className="mr-1 h-4 w-4" />
-            {importing ? "Importing..." : "Import"}
+            {importing ? t("sources.importing") : t("sources.import")}
           </Button>
         </div>
       </div>
@@ -209,11 +211,11 @@ export function SourcesView() {
       <ScrollArea className="flex-1">
         {sources.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
-            <p>No sources yet</p>
-            <p>Import documents to start building your wiki</p>
+            <p>{t("sources.noSources")}</p>
+            <p>{t("sources.importHint")}</p>
             <Button variant="outline" size="sm" onClick={handleImport}>
               <Plus className="mr-1 h-4 w-4" />
-              Import Files
+              {t("sources.importFiles")}
             </Button>
           </div>
         ) : (
@@ -234,7 +236,7 @@ export function SourcesView() {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0"
-                  title="Ingest into wiki"
+                  title={t("sources.ingest")}
                   disabled={ingestingPath === source.path}
                   onClick={() => handleIngest(source)}
                 >
@@ -244,7 +246,7 @@ export function SourcesView() {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                  title="Delete source and related wiki pages"
+                  title={t("sources.delete")}
                   onClick={() => handleDelete(source)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -256,7 +258,7 @@ export function SourcesView() {
       </ScrollArea>
 
       <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-        {sources.length} source{sources.length !== 1 ? "s" : ""}
+        {t("sources.sourceCount", { count: sources.length })}
       </div>
     </div>
   )

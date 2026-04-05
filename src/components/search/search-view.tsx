@@ -4,8 +4,10 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile } from "@/commands/fs"
 import { searchWiki, type SearchResult } from "@/lib/search"
+import { useTranslation } from "react-i18next"
 
 export function SearchView() {
+  const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
   const setFileContent = useWikiStore((s) => s.setFileContent)
@@ -64,7 +66,7 @@ export function SearchView() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search wiki..."
+            placeholder={t("search.placeholder")}
             autoFocus
             className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
@@ -75,13 +77,13 @@ export function SearchView() {
         {!query.trim() ? (
           <div className="flex flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
             <Search className="h-8 w-8 text-muted-foreground/30" />
-            <p>Type to search wiki pages</p>
+            <p>{t("search.startSearching")}</p>
           </div>
         ) : searching ? (
           <div className="p-4 text-center text-sm text-muted-foreground">Searching...</div>
         ) : results.length === 0 ? (
           <div className="p-4 text-center text-sm text-muted-foreground">
-            No results for <span className="font-medium">"{query}"</span>
+            {t("search.noResults")} <span className="font-medium">"{query}"</span>
           </div>
         ) : (
           <div className="flex flex-col gap-1 p-2">

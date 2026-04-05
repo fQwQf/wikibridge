@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown, File, Folder } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
 import type { FileNode } from "@/types/wiki"
+import { useTranslation } from "react-i18next"
 
 function TreeNode({ node, depth }: { node: FileNode; depth: number }) {
   const [expanded, setExpanded] = useState(depth < 1)
@@ -52,13 +53,14 @@ function TreeNode({ node, depth }: { node: FileNode; depth: number }) {
 }
 
 export function FileTree() {
+  const { t } = useTranslation()
   const fileTree = useWikiStore((s) => s.fileTree)
   const project = useWikiStore((s) => s.project)
 
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
-        No project open
+        {t("fileTree.noProject")}
       </div>
     )
   }

@@ -58,3 +58,15 @@ export async function removeFromRecentProjects(
   const updated = existing.filter((p) => p.path !== path)
   await store.set(RECENT_PROJECTS_KEY, updated)
 }
+
+const LANGUAGE_KEY = "language"
+
+export async function saveLanguage(lang: string): Promise<void> {
+  const store = await getStore()
+  await store.set(LANGUAGE_KEY, lang)
+}
+
+export async function loadLanguage(): Promise<string | null> {
+  const store = await getStore()
+  return (await store.get<string>(LANGUAGE_KEY)) ?? null
+}

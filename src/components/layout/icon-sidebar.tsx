@@ -4,16 +4,19 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
+import { useTranslation } from "react-i18next"
 import type { WikiState } from "@/stores/wiki-store"
 
-const navItems: { view: WikiState["activeView"]; icon: typeof FileText; label: string }[] = [
-  { view: "wiki", icon: FileText, label: "Wiki" },
-  { view: "sources", icon: FolderOpen, label: "Sources" },
-  { view: "search", icon: Search, label: "Search" },
-  { view: "graph", icon: Network, label: "Graph" },
-  { view: "lint", icon: ClipboardCheck, label: "Lint" },
-  { view: "review", icon: ClipboardList, label: "Review" },
-  { view: "settings", icon: Settings, label: "Settings" },
+type NavView = WikiState["activeView"]
+
+const NAV_ITEMS: { view: NavView; icon: typeof FileText; labelKey: string }[] = [
+  { view: "wiki", icon: FileText, labelKey: "nav.wiki" },
+  { view: "sources", icon: FolderOpen, labelKey: "nav.sources" },
+  { view: "search", icon: Search, labelKey: "nav.search" },
+  { view: "graph", icon: Network, labelKey: "nav.graph" },
+  { view: "lint", icon: ClipboardCheck, labelKey: "nav.lint" },
+  { view: "review", icon: ClipboardList, labelKey: "nav.review" },
+  { view: "settings", icon: Settings, labelKey: "nav.settings" },
 ]
 
 interface IconSidebarProps {
@@ -21,6 +24,7 @@ interface IconSidebarProps {
 }
 
 export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
+  const { t } = useTranslation()
   const activeView = useWikiStore((s) => s.activeView)
   const setActiveView = useWikiStore((s) => s.setActiveView)
   const pendingCount = useReviewStore((s) => s.items.filter((i) => !i.resolved).length)
@@ -29,7 +33,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full w-12 flex-col items-center border-r bg-muted/50 py-2">
         <div className="flex flex-1 flex-col items-center gap-1">
-          {navItems.map(({ view, icon: Icon, label }) => (
+          {NAV_ITEMS.map(({ view, icon: Icon, labelKey }) => (
             <Tooltip key={view}>
               <TooltipTrigger
                 onClick={() => setActiveView(view)}
@@ -47,7 +51,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
                 )}
               </TooltipTrigger>
               <TooltipContent side="right">
-                {label}
+                {t(labelKey)}
                 {view === "review" && pendingCount > 0 && ` (${pendingCount})`}
               </TooltipContent>
             </Tooltip>
@@ -61,7 +65,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
             >
               <ArrowLeftRight className="h-5 w-5" />
             </TooltipTrigger>
-            <TooltipContent side="right">Switch Project</TooltipContent>
+            <TooltipContent side="right">{t("nav.switchProject")}</TooltipContent>
           </Tooltip>
         </div>
       </div>
