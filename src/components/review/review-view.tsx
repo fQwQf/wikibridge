@@ -1,3 +1,4 @@
+import { useCallback } from "react"
 import {
   AlertTriangle,
   Copy,
@@ -12,6 +13,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
+import { useWikiStore } from "@/stores/wiki-store"
+import { writeFile, readFile, listDirectory } from "@/commands/fs"
 
 const typeConfig: Record<ReviewItem["type"], { icon: typeof AlertTriangle; label: string; color: string }> = {
   contradiction: { icon: AlertTriangle, label: "Contradiction", color: "text-amber-500" },
@@ -26,6 +29,64 @@ export function ReviewView() {
   const resolveItem = useReviewStore((s) => s.resolveItem)
   const dismissItem = useReviewStore((s) => s.dismissItem)
   const clearResolved = useReviewStore((s) => s.clearResolved)
+  const project = useWikiStore((s) => s.project)
+  const setFileTree = useWikiStore((s) => s.setFileTree)
+
+  const handleResolve = useCallback(async (id: string, action: string) => {
+    if (action.startsWith("save:") && project) {
+      // Decode and save the content to wiki
+      try {
+        const encoded = action.slice(5)
+        const content = decodeURIComponent(atob(encoded))
+
+        // Strip hidden comments
+        const cleanContent = content
+          .replace(/<!--\s*save-worthy:.*?-->/g, "")
+          .replace(/<!--\s*sources:.*?-->/g, "")
+          .trimEnd()
+
+        // Generate filename
+        const firstLine = cleanContent.split("\n").find((l) => l.trim() && !l.startsWith("<!--"))?.replace(/^#+\s*/, "").trim() ?? "Saved Query"
+        const title = firstLine.slice(0, 60)
+        const slug = title.toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 50)
+        const date = new Date().toISOString().slice(0, 10)
+        const fileName = `${slug}-${date}.md`
+        const filePath = `${project.path}/wiki/queries/${fileName}`
+
+        const frontmatter = `---\ntype: query\ntitle: "${title.replace(/"/g, '\\"')}"\ncreated: ${date}\ntags: []\n---\n\n`
+        await writeFile(filePath, frontmatter + cleanContent)
+
+        // Update index
+        const indexPath = `${project.path}/wiki/index.md`
+        let indexContent = ""
+        try { indexContent = await readFile(indexPath) } catch { indexContent = "# Wiki Index\n" }
+        const entry = `- [[queries/${slug}-${date}|${title}]]`
+        if (indexContent.includes("## Queries")) {
+          indexContent = indexContent.replace(/(## Queries\n)/, `$1${entry}\n`)
+        } else {
+          indexContent = indexContent.trimEnd() + "\n\n## Queries\n" + entry + "\n"
+        }
+        await writeFile(indexPath, indexContent)
+
+        // Append log
+        const logPath = `${project.path}/wiki/log.md`
+        let logContent = ""
+        try { logContent = await readFile(logPath) } catch { logContent = "# Wiki Log\n" }
+        await writeFile(logPath, logContent.trimEnd() + `\n- ${date}: Saved query page \`${fileName}\`\n`)
+
+        // Refresh tree
+        const tree = await listDirectory(project.path)
+        setFileTree(tree)
+
+        resolveItem(id, "Saved to Wiki")
+      } catch (err) {
+        console.error("Failed to save to wiki from review:", err)
+        resolveItem(id, "Save failed")
+      }
+    } else {
+      resolveItem(id, action)
+    }
+  }, [project, resolveItem, setFileTree])
 
   const pending = items.filter((i) => !i.resolved)
   const resolved = items.filter((i) => i.resolved)
@@ -61,7 +122,7 @@ export function ReviewView() {
               <ReviewCard
                 key={item.id}
                 item={item}
-                onResolve={resolveItem}
+                onResolve={handleResolve}
                 onDismiss={dismissItem}
               />
             ))}
@@ -74,7 +135,7 @@ export function ReviewView() {
               <ReviewCard
                 key={item.id}
                 item={item}
-                onResolve={resolveItem}
+                onResolve={handleResolve}
                 onDismiss={dismissItem}
               />
             ))}

@@ -7,8 +7,9 @@ import { useChatStore, chatMessagesToLLM } from "@/stores/chat-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { streamChat, type ChatMessage as LLMMessage } from "@/lib/llm-client"
 import { executeIngestWrites } from "@/lib/ingest"
-import { listDirectory, readFile } from "@/commands/fs"
+import { listDirectory, readFile, writeFile } from "@/commands/fs"
 import { searchWiki } from "@/lib/search"
+import { useReviewStore } from "@/stores/review-store"
 import type { FileNode } from "@/types/wiki"
 
 export function ChatPanel() {
@@ -186,9 +187,15 @@ export function ChatPanel() {
             "- Pages marked [Source] are the user's original uploaded documents — they contain the full detail.",
             "- If the provided pages don't contain enough information, say so honestly.",
             "- Use [[wikilink]] syntax to reference wiki pages you cite.",
-            "- At the VERY END of your response, add a hidden comment listing source files used:",
+            "- At the VERY END of your response, add hidden comments:",
             "  <!-- sources: file1.pdf, file2.md -->",
             "- Use EXACT file names from the Source Files list below.",
+            "",
+            "## Save Judgment",
+            "- If your answer contains a valuable synthesis, comparison, analysis, new insight, or connection worth preserving in the wiki, add this hidden comment BEFORE the sources comment:",
+            "  <!-- save-worthy: yes | Brief reason why this is worth saving -->",
+            "- Only mark as save-worthy if the answer genuinely adds knowledge value. Simple factual lookups or short answers are NOT save-worthy.",
+            "- Examples of save-worthy: cross-source comparisons, multi-concept synthesis, discovered contradictions, novel connections between topics.",
             "",
             "Use markdown formatting for clarity.",
             "",
@@ -221,6 +228,8 @@ export function ChatPanel() {
           onDone: () => {
             finalizeStream(accumulated)
             abortRef.current = null
+            // Check if LLM marked this answer as save-worthy
+            checkSaveWorthy(accumulated, text)
           },
           onError: (err) => {
             finalizeStream(`Error: ${err.message}`)
@@ -297,6 +306,38 @@ export function ChatPanel() {
       />
     </div>
   )
+}
+
+/**
+ * Check if the LLM marked its response as save-worthy.
+ * If so, add a review item prompting the user to save it.
+ */
+function checkSaveWorthy(response: string, question: string) {
+  const match = response.match(/<!--\s*save-worthy:\s*yes\s*\|\s*(.+?)\s*-->/)
+  if (!match) return
+
+  const reason = match[1]
+  const firstLine = response.split("\n").find((l) => l.trim() && !l.startsWith("<!--"))?.replace(/^#+\s*/, "").trim() ?? "Chat answer"
+  const title = firstLine.slice(0, 60)
+
+  // Store the content reference so the review action can save it
+  const contentToSave = response
+  const questionText = question
+
+  useReviewStore.getState().addItem({
+    type: "suggestion",
+    title: `Save to Wiki: ${title}`,
+    description: `${reason}\n\nQuestion: "${questionText.slice(0, 100)}${questionText.length > 100 ? "..." : ""}"`,
+    options: [
+      { label: "Save to Wiki", action: `save:${encodeContent(contentToSave)}` },
+      { label: "Skip", action: "Skip" },
+    ],
+  })
+}
+
+function encodeContent(text: string): string {
+  // Use base64-like encoding to safely store content in action string
+  return btoa(encodeURIComponent(text))
 }
 
 function flattenFileNames(nodes: FileNode[]): string[] {
