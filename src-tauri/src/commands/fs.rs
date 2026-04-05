@@ -5,7 +5,25 @@ use crate::types::wiki::FileNode;
 
 #[tauri::command]
 pub fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| format!("Failed to read file '{}': {}", path, e))
+    let p = Path::new(&path);
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match ext.as_str() {
+        "pdf" => extract_pdf_text(&path),
+        _ => fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read file '{}': {}", path, e)),
+    }
+}
+
+fn extract_pdf_text(path: &str) -> Result<String, String> {
+    let bytes =
+        fs::read(path).map_err(|e| format!("Failed to read PDF '{}': {}", path, e))?;
+    pdf_extract::extract_text_from_mem(&bytes)
+        .map_err(|e| format!("Failed to extract text from PDF '{}': {}", path, e))
 }
 
 #[tauri::command]
