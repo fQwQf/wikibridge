@@ -1,19 +1,23 @@
 import { useState, useEffect, useCallback } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
-import { Plus, FileText, Trash2, RefreshCw } from "lucide-react"
+import { Plus, FileText, RefreshCw, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
 import { copyFile, listDirectory, readFile } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
+import { startIngest } from "@/lib/ingest"
 
 export function SourcesView() {
   const project = useWikiStore((s) => s.project)
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
   const setActiveView = useWikiStore((s) => s.setActiveView)
   const setFileContent = useWikiStore((s) => s.setFileContent)
+  const setChatExpanded = useWikiStore((s) => s.setChatExpanded)
+  const llmConfig = useWikiStore((s) => s.llmConfig)
   const [sources, setSources] = useState<FileNode[]>([])
   const [importing, setImporting] = useState(false)
+  const [ingestingPath, setIngestingPath] = useState<string | null>(null)
 
   const loadSources = useCallback(async () => {
     if (!project) return
@@ -99,6 +103,20 @@ export function SourcesView() {
     }
   }
 
+  async function handleIngest(node: FileNode) {
+    if (!project || ingestingPath) return
+    setIngestingPath(node.path)
+    try {
+      setChatExpanded(true)
+      setActiveView("wiki")
+      await startIngest(project.path, node.path, llmConfig)
+    } catch (err) {
+      console.error("Failed to start ingest:", err)
+    } finally {
+      setIngestingPath(null)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
@@ -127,14 +145,28 @@ export function SourcesView() {
         ) : (
           <div className="p-2">
             {sources.map((source) => (
-              <button
+              <div
                 key={source.path}
-                onClick={() => handleOpenSource(source)}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                className="flex w-full items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               >
-                <FileText className="h-4 w-4 shrink-0" />
-                <span className="truncate">{source.name}</span>
-              </button>
+                <button
+                  onClick={() => handleOpenSource(source)}
+                  className="flex flex-1 items-center gap-2 truncate px-2 py-1 text-left"
+                >
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{source.name}</span>
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  title="Ingest into wiki"
+                  disabled={ingestingPath === source.path}
+                  onClick={() => handleIngest(source)}
+                >
+                  <BookOpen className="h-4 w-4" />
+                </Button>
+              </div>
             ))}
           </div>
         )}
