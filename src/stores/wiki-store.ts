@@ -51,4 +51,4 @@ export const useWikiStore = create<WikiState>((set) => ({
   setLlmConfig: (llmConfig) => set({ llmConfig }),
 }))
 
-export type { WikiState }
+export type { WikiState, LlmConfig }
