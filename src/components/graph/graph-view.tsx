@@ -130,6 +130,7 @@ export function GraphView() {
   const setFileContent = useWikiStore((s) => s.setFileContent)
   const setActiveView = useWikiStore((s) => s.setActiveView)
 
+  const fileTree = useWikiStore((s) => s.fileTree)
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [edges, setEdges] = useState<GraphEdge[]>([])
   const [loading, setLoading] = useState(false)
@@ -153,12 +154,12 @@ export function GraphView() {
     }
   }, [project])
 
-  // Auto-load on mount when a project is open
+  // Auto-load on mount and reload when file tree changes (after ingest)
   useEffect(() => {
-    if (project && !loaded) {
+    if (project) {
       loadGraph()
     }
-  }, [project, loaded, loadGraph])
+  }, [project, fileTree, loadGraph])
 
   const handleNodeClick = useCallback(
     async (nodeId: string) => {
