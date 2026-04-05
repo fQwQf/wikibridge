@@ -35,41 +35,80 @@ export async function autoIngest(
     tryReadFile(`${projectPath}/wiki/index.md`),
   ])
 
-  activity.updateItem(activityId, { detail: "Generating wiki pages..." })
+  const truncatedContent = sourceContent.length > 50000
+    ? sourceContent.slice(0, 50000) + "\n\n[...truncated...]"
+    : sourceContent
 
-  const systemPrompt = buildAutoIngestPrompt(schema, purpose, index)
-  const userMessage = `Ingest this source into the wiki:\n\n**File:** ${fileName}\n\n---\n\n${sourceContent.length > 50000 ? sourceContent.slice(0, 50000) + "\n\n[...truncated...]" : sourceContent}`
+  // ── Step 1: Analysis ──────────────────────────────────────────
+  // LLM reads the source and produces a structured analysis:
+  // key entities, concepts, main arguments, connections to existing wiki, contradictions
+  activity.updateItem(activityId, { detail: "Step 1/2: Analyzing source..." })
 
-  let accumulated = ""
+  let analysis = ""
 
   await streamChat(
     llmConfig,
     [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
+      { role: "system", content: buildAnalysisPrompt(purpose, index) },
+      { role: "user", content: `Analyze this source document:\n\n**File:** ${fileName}\n\n---\n\n${truncatedContent}` },
     ],
     {
-      onToken: (token) => {
-        accumulated += token
-      },
+      onToken: (token) => { analysis += token },
       onDone: () => {},
       onError: (err) => {
-        activity.updateItem(activityId, { status: "error", detail: err.message })
+        activity.updateItem(activityId, { status: "error", detail: `Analysis failed: ${err.message}` })
       },
     },
     signal,
   )
 
-  // If errored, stop here
   if (useActivityStore.getState().items.find((i) => i.id === activityId)?.status === "error") {
     return []
   }
 
-  // Parse and write files
-  activity.updateItem(activityId, { detail: "Writing wiki pages..." })
-  const writtenPaths = await writeFileBlocks(projectPath, accumulated)
+  // ── Step 2: Generation ────────────────────────────────────────
+  // LLM takes the analysis as context and produces wiki files + review items
+  activity.updateItem(activityId, { detail: "Step 2/2: Generating wiki pages..." })
 
-  // Refresh file tree
+  let generation = ""
+
+  await streamChat(
+    llmConfig,
+    [
+      { role: "system", content: buildGenerationPrompt(schema, purpose, index) },
+      {
+        role: "user",
+        content: [
+          `Based on the following analysis of **${fileName}**, generate the wiki files.`,
+          "",
+          "## Source Analysis",
+          "",
+          analysis,
+          "",
+          "## Original Source Content",
+          "",
+          truncatedContent,
+        ].join("\n"),
+      },
+    ],
+    {
+      onToken: (token) => { generation += token },
+      onDone: () => {},
+      onError: (err) => {
+        activity.updateItem(activityId, { status: "error", detail: `Generation failed: ${err.message}` })
+      },
+    },
+    signal,
+  )
+
+  if (useActivityStore.getState().items.find((i) => i.id === activityId)?.status === "error") {
+    return []
+  }
+
+  // ── Step 3: Write files ───────────────────────────────────────
+  activity.updateItem(activityId, { detail: "Writing files..." })
+  const writtenPaths = await writeFileBlocks(projectPath, generation)
+
   if (writtenPaths.length > 0) {
     try {
       const tree = await listDirectory(projectPath)
@@ -79,8 +118,8 @@ export async function autoIngest(
     }
   }
 
-  // Parse and add review items
-  const reviewItems = parseReviewBlocks(accumulated, sourcePath)
+  // ── Step 4: Parse review items ────────────────────────────────
+  const reviewItems = parseReviewBlocks(generation, sourcePath)
   if (reviewItems.length > 0) {
     useReviewStore.getState().addItems(reviewItems)
   }
@@ -182,44 +221,103 @@ function parseReviewBlocks(
   return items
 }
 
-function buildAutoIngestPrompt(schema: string, purpose: string, index: string): string {
+/**
+ * Step 1 prompt: AI reads the source and produces a structured analysis.
+ * This is the "discussion" step — the AI reasons about the source before writing wiki pages.
+ */
+function buildAnalysisPrompt(purpose: string, index: string): string {
   return [
-    "You are a wiki maintainer. You will read a source document and directly produce wiki files.",
+    "You are an expert research analyst. Read the source document and produce a structured analysis.",
+    "",
+    "Your analysis should cover:",
+    "",
+    "## Key Entities",
+    "List people, organizations, products, datasets, tools mentioned. For each:",
+    "- Name and type",
+    "- Role in the source (central vs. peripheral)",
+    "- Whether it likely already exists in the wiki (check the index)",
+    "",
+    "## Key Concepts",
+    "List theories, methods, techniques, phenomena. For each:",
+    "- Name and brief definition",
+    "- Why it matters in this source",
+    "- Whether it likely already exists in the wiki",
+    "",
+    "## Main Arguments & Findings",
+    "- What are the core claims or results?",
+    "- What evidence supports them?",
+    "- How strong is the evidence?",
+    "",
+    "## Connections to Existing Wiki",
+    "- What existing pages does this source relate to?",
+    "- Does it strengthen, challenge, or extend existing knowledge?",
+    "",
+    "## Contradictions & Tensions",
+    "- Does anything in this source conflict with existing wiki content?",
+    "- Are there internal tensions or caveats?",
+    "",
+    "## Recommendations",
+    "- What wiki pages should be created or updated?",
+    "- What should be emphasized vs. de-emphasized?",
+    "- Any open questions worth flagging for the user?",
+    "",
+    "Be thorough but concise. Focus on what's genuinely important.",
+    "",
+    purpose ? `## Wiki Purpose (for context)\n${purpose}` : "",
+    index ? `## Current Wiki Index (for checking existing content)\n${index}` : "",
+  ].filter(Boolean).join("\n")
+}
+
+/**
+ * Step 2 prompt: AI takes its own analysis and generates wiki files + review items.
+ */
+function buildGenerationPrompt(schema: string, purpose: string, index: string): string {
+  return [
+    "You are a wiki maintainer. Based on the analysis provided, generate wiki files.",
     "",
     "## Output Format",
     "",
-    "Output wiki files in this format:",
+    "Output each wiki file in this exact format:",
     "",
     "---FILE: wiki/sources/filename.md---",
     "(complete file content with YAML frontmatter)",
     "---END FILE---",
     "",
-    "For each source, produce:",
-    "1. A source summary page in wiki/sources/",
-    "2. Entity pages in wiki/entities/ for key entities (people, organizations, products)",
-    "3. Concept pages in wiki/concepts/ for key concepts (theories, methods, techniques)",
-    "4. An updated wiki/index.md with new entries added to existing categories",
-    "5. A log entry for wiki/log.md (just the new entry to append)",
+    "Generate:",
+    "1. A source summary page in wiki/sources/ (always)",
+    "2. Entity pages in wiki/entities/ for key entities identified in the analysis",
+    "3. Concept pages in wiki/concepts/ for key concepts identified in the analysis",
+    "4. An updated wiki/index.md — add new entries to existing categories, preserve all existing entries",
+    "5. A log entry for wiki/log.md (just the new entry to append, format: ## [YYYY-MM-DD] ingest | Title)",
     "",
-    "Use YAML frontmatter on every page. Use [[wikilink]] syntax for cross-references.",
-    "Use kebab-case filenames.",
+    "Rules:",
+    "- Use YAML frontmatter on every page (type, title, created, updated, tags, related)",
+    "- Use [[wikilink]] syntax for cross-references between pages",
+    "- Use kebab-case filenames",
+    "- Follow the analysis recommendations on what to emphasize",
+    "- If the analysis found connections to existing pages, add cross-references",
     "",
     "## Review Items",
     "",
-    "After the FILE blocks, if you find anything that needs human judgment, output REVIEW blocks:",
+    "After the FILE blocks, output REVIEW blocks for anything that needs human judgment:",
     "",
     "---REVIEW: type | Title---",
-    "Description of what needs attention.",
+    "Description of what needs the user's attention.",
     "OPTIONS: Option A | Option B | Option C",
     "PAGES: wiki/page1.md, wiki/page2.md",
     "---END REVIEW---",
     "",
-    "Review types: contradiction, duplicate, missing-page, suggestion",
-    "Only create reviews for things that genuinely need human input.",
+    "Review types and when to use:",
+    "- contradiction: the analysis found conflicts with existing wiki content",
+    "- duplicate: an entity/concept might already exist under a different name in the index",
+    "- missing-page: an important concept is referenced but has no dedicated page",
+    "- suggestion: ideas for further research, related sources to look for, or connections worth exploring",
+    "",
+    "Only create reviews for things that genuinely need human input. Don't create trivial reviews.",
     "",
     purpose ? `## Wiki Purpose\n${purpose}` : "",
     schema ? `## Wiki Schema\n${schema}` : "",
-    index ? `## Current Wiki Index (add to this, don't remove existing entries)\n${index}` : "",
+    index ? `## Current Wiki Index (preserve all existing entries, add new ones)\n${index}` : "",
   ].filter(Boolean).join("\n")
 }
 
