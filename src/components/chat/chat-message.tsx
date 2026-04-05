@@ -75,6 +75,10 @@ function MarkdownContent({ content }: { content: string }) {
               const pageName = href.slice("wikilink:".length)
               return <WikiLink pageName={pageName}>{children}</WikiLink>
             }
+            if (href?.startsWith("sourceref:")) {
+              const fileName = href.slice("sourceref:".length)
+              return <SourceRef fileName={fileName} />
+            }
             return <a href={href} {...props} target="_blank" rel="noopener noreferrer">{children}</a>
           },
           // Compact code blocks
@@ -90,17 +94,53 @@ function MarkdownContent({ content }: { content: string }) {
 }
 
 /**
- * Convert [[wikilink]] syntax to markdown links that our custom renderer can handle.
- * [[page-name]] → [page-name](wikilink:page-name)
- * [[page-name|display text]] → [display text](wikilink:page-name)
+ * Process special link syntax in LLM responses:
+ * - [[page-name]] → [page-name](wikilink:page-name)
+ * - @filename.pdf → [@filename.pdf](sourceref:filename.pdf)
  */
 function processWikiLinks(text: string): string {
-  return text.replace(
+  // Process [[wikilinks]]
+  let result = text.replace(
     /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g,
     (_match, pageName: string, displayText?: string) => {
       const display = displayText?.trim() || pageName.trim()
       return `[${display}](wikilink:${pageName.trim()})`
     }
+  )
+
+  // Process @filename references (but not inside markdown links or code blocks)
+  // Match @filename at word boundary, supporting extensions like .pdf, .md, .txt
+  result = result.replace(
+    /(?<!\[)@([\w.-]+\.[\w]+)/g,
+    (_match, fileName: string) => {
+      return `[@${fileName}](sourceref:${fileName})`
+    }
+  )
+
+  return result
+}
+
+function SourceRef({ fileName }: { fileName: string }) {
+  const project = useWikiStore((s) => s.project)
+  const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
+  const setActiveView = useWikiStore((s) => s.setActiveView)
+
+  const handleClick = useCallback(() => {
+    if (!project) return
+    const path = `${project.path}/raw/sources/${fileName}`
+    setSelectedFile(path)
+    setActiveView("wiki")
+  }, [project, fileName, setSelectedFile, setActiveView])
+
+  return (
+    <button
+      onClick={handleClick}
+      className="inline-flex items-center gap-0.5 rounded bg-accent/50 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-accent"
+      title={`Open source: ${fileName}`}
+    >
+      <span className="text-muted-foreground">@</span>
+      {fileName}
+    </button>
   )
 }
 
