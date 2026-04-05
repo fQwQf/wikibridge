@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import { Bot, User, FileText } from "lucide-react"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -109,10 +109,12 @@ function WikiLink({ pageName, children }: { pageName: string; children: React.Re
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
   const setFileContent = useWikiStore((s) => s.setFileContent)
   const setActiveView = useWikiStore((s) => s.setActiveView)
+  const [exists, setExists] = useState<boolean | null>(null)
+  const resolvedPath = useRef<string | null>(null)
 
-  const handleClick = useCallback(async () => {
+  // Check if the page exists on mount
+  useEffect(() => {
     if (!project) return
-    // Try to find the file in common wiki directories
     const candidates = [
       `${project.path}/wiki/entities/${pageName}.md`,
       `${project.path}/wiki/concepts/${pageName}.md`,
@@ -123,20 +125,46 @@ function WikiLink({ pageName, children }: { pageName: string; children: React.Re
       `${project.path}/wiki/${pageName}.md`,
     ]
 
-    for (const path of candidates) {
-      try {
-        const content = await readFile(path)
-        setSelectedFile(path)
-        setFileContent(content)
-        setActiveView("wiki")
-        return
-      } catch {
-        // try next candidate
+    let cancelled = false
+    async function check() {
+      for (const path of candidates) {
+        try {
+          await readFile(path)
+          if (!cancelled) {
+            resolvedPath.current = path
+            setExists(true)
+          }
+          return
+        } catch {
+          // try next
+        }
       }
+      if (!cancelled) setExists(false)
     }
-    // If not found, just set the name
-    console.warn(`Wiki page not found: ${pageName}`)
-  }, [project, pageName, setSelectedFile, setFileContent, setActiveView])
+    check()
+    return () => { cancelled = true }
+  }, [project, pageName])
+
+  const handleClick = useCallback(async () => {
+    if (!resolvedPath.current) return
+    try {
+      const content = await readFile(resolvedPath.current)
+      setSelectedFile(resolvedPath.current)
+      setFileContent(content)
+      setActiveView("wiki")
+    } catch {
+      // ignore
+    }
+  }, [setSelectedFile, setFileContent, setActiveView])
+
+  // Page doesn't exist — render as plain text (not clickable)
+  if (exists === false) {
+    return (
+      <span className="inline text-muted-foreground" title={`Page not found: ${pageName}`}>
+        {children}
+      </span>
+    )
+  }
 
   return (
     <button

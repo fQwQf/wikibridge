@@ -51,14 +51,18 @@ export function ChatPanel() {
         systemMessages.push({
           role: "system",
           content: [
-            "You are a knowledgeable wiki assistant. Answer questions using the wiki's content.",
-            "When you reference wiki pages, use [[wikilink]] syntax (e.g., [[entity-name]], [[concept-name]]).",
-            "Always cite which wiki pages your answer draws from.",
+            "You are a knowledgeable wiki assistant. Answer questions based ONLY on the wiki's actual content.",
+            "",
+            "## Citation Rules (CRITICAL)",
+            "- Use [[wikilink]] syntax ONLY for pages that actually exist in the Wiki Index below.",
+            "- NEVER invent or hallucinate page names. If a page doesn't exist in the index, don't link to it.",
+            "- If the wiki doesn't have enough information to answer, say so honestly.",
+            "- At the end of your answer, list the actual wiki pages you referenced under '**Sources:**'",
+            "",
             "Use markdown formatting for clarity.",
             "",
             purpose ? `## Wiki Purpose\n${purpose}` : "",
-            schema ? `## Wiki Schema\n${schema}` : "",
-            index ? `## Wiki Index\n${index}` : "",
+            index ? `## Wiki Index (ONLY reference pages listed here)\n${index}` : "## Wiki Index\n(No pages yet)",
           ].filter(Boolean).join("\n"),
         })
       }
