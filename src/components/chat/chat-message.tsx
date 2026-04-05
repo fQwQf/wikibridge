@@ -45,6 +45,7 @@ interface ChatMessageProps {
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user"
   const isSystem = message.role === "system"
+  const isAssistant = message.role === "assistant"
 
   return (
     <div className={`flex gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -59,19 +60,35 @@ export function ChatMessage({ message }: ChatMessageProps) {
       >
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
-      <div
-        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-          isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted text-foreground"
-        }`}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        ) : (
-          <MarkdownContent content={message.content} />
+      <div className="max-w-[80%] flex flex-col gap-1.5">
+        <div
+          className={`rounded-lg px-3 py-2 text-sm ${
+            isUser
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-foreground"
+          }`}
+        >
+          {isUser ? (
+            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          ) : (
+            <MarkdownContent content={message.content} />
+          )}
+        </div>
+        {isAssistant && cachedSourceFiles.length > 0 && (
+          <SourceFilesBar />
         )}
       </div>
+    </div>
+  )
+}
+
+function SourceFilesBar() {
+  return (
+    <div className="flex flex-wrap items-center gap-1 px-1">
+      <span className="text-[10px] text-muted-foreground">Sources:</span>
+      {cachedSourceFiles.map((fileName) => (
+        <SourceRef key={fileName} fileName={fileName} />
+      ))}
     </div>
   )
 }
