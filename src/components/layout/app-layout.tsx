@@ -5,7 +5,11 @@ import { IconSidebar } from "./icon-sidebar"
 import { FileTree } from "./file-tree"
 import { ContentArea } from "./content-area"
 
-export function AppLayout() {
+interface AppLayoutProps {
+  onSwitchProject: () => void
+}
+
+export function AppLayout({ onSwitchProject }: AppLayoutProps) {
   const project = useWikiStore((s) => s.project)
   const setFileTree = useWikiStore((s) => s.setFileTree)
   const [sidebarWidth, setSidebarWidth] = useState(260)
@@ -55,7 +59,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <IconSidebar />
+      <IconSidebar onSwitchProject={onSwitchProject} />
       <div ref={containerRef} className="flex min-w-0 flex-1 overflow-hidden">
         <div
           className="shrink-0 overflow-hidden border-r"
