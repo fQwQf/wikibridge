@@ -74,23 +74,44 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <MarkdownContent content={message.content} />
           )}
         </div>
-        {isAssistant && cachedSourceFiles.length > 0 && (
-          <SourceFilesBar />
-        )}
+        {isAssistant && <SourceFilesBar content={message.content} />}
       </div>
     </div>
   )
 }
 
-function SourceFilesBar() {
+function SourceFilesBar({ content }: { content: string }) {
+  const cited = useMemo(() => extractCitedSources(content), [content])
+
+  if (cited.length === 0) return null
+
   return (
     <div className="flex flex-wrap items-center gap-1 px-1">
       <span className="text-[10px] text-muted-foreground">Sources:</span>
-      {cachedSourceFiles.map((fileName) => (
+      {cited.map((fileName) => (
         <SourceRef key={fileName} fileName={fileName} />
       ))}
     </div>
   )
+}
+
+/**
+ * Extract cited source files from the hidden comment at the end of the response.
+ * Format: <!-- sources: file1.pdf, file2.md -->
+ * Falls back to matching known source filenames in the text if no comment found.
+ */
+function extractCitedSources(text: string): string[] {
+  // Try to parse the hidden comment
+  const commentMatch = text.match(/<!--\s*sources:\s*(.+?)\s*-->/)
+  if (commentMatch) {
+    return commentMatch[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && cachedSourceFiles.includes(s))
+  }
+
+  // Fallback: check which known source filenames appear in the text
+  return cachedSourceFiles.filter((name) => text.includes(name))
 }
 
 interface StreamingMessageProps {
@@ -112,7 +133,9 @@ export function StreamingMessage({ content }: StreamingMessageProps) {
 }
 
 function MarkdownContent({ content }: { content: string }) {
-  const processed = useMemo(() => processContent(content), [content])
+  // Strip hidden sources comment before rendering
+  const cleaned = content.replace(/<!--\s*sources:.*?-->/g, "").trimEnd()
+  const processed = useMemo(() => processContent(cleaned), [cleaned])
 
   return (
     <div className="chat-markdown prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none">
