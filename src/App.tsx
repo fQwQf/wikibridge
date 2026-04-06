@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog"
 import i18n from "@/i18n"
 import { useWikiStore } from "@/stores/wiki-store"
 import { listDirectory, openProject } from "@/commands/fs"
-import { getLastProject, saveLastProject, loadLlmConfig, loadLanguage } from "@/lib/project-store"
+import { getLastProject, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig } from "@/lib/project-store"
 import { AppLayout } from "@/components/layout/app-layout"
 import { WelcomeScreen } from "@/components/project/welcome-screen"
 import { CreateProjectDialog } from "@/components/project/create-project-dialog"
@@ -25,6 +25,10 @@ function App() {
         const savedConfig = await loadLlmConfig()
         if (savedConfig) {
           useWikiStore.getState().setLlmConfig(savedConfig)
+        }
+        const savedSearchConfig = await loadSearchApiConfig()
+        if (savedSearchConfig) {
+          useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
         }
         const savedLang = await loadLanguage()
         if (savedLang) {

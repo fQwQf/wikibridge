@@ -1,6 +1,6 @@
 import { load } from "@tauri-apps/plugin-store"
 import type { WikiProject } from "@/types/wiki"
-import type { LlmConfig } from "@/stores/wiki-store"
+import type { LlmConfig, SearchApiConfig } from "@/stores/wiki-store"
 
 const STORE_NAME = "app-state.json"
 const RECENT_PROJECTS_KEY = "recentProjects"
@@ -48,6 +48,18 @@ export async function saveLlmConfig(config: LlmConfig): Promise<void> {
 export async function loadLlmConfig(): Promise<LlmConfig | null> {
   const store = await getStore()
   return (await store.get<LlmConfig>(LLM_CONFIG_KEY)) ?? null
+}
+
+const SEARCH_API_KEY = "searchApiConfig"
+
+export async function saveSearchApiConfig(config: SearchApiConfig): Promise<void> {
+  const store = await getStore()
+  await store.set(SEARCH_API_KEY, config)
+}
+
+export async function loadSearchApiConfig(): Promise<SearchApiConfig | null> {
+  const store = await getStore()
+  return (await store.get<SearchApiConfig>(SEARCH_API_KEY)) ?? null
 }
 
 export async function removeFromRecentProjects(

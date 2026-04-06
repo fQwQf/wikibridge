@@ -9,6 +9,11 @@ interface LlmConfig {
   customEndpoint: string
 }
 
+interface SearchApiConfig {
+  provider: "tavily" | "none"
+  apiKey: string
+}
+
 interface WikiState {
   project: WikiProject | null
   fileTree: FileNode[]
@@ -17,6 +22,7 @@ interface WikiState {
   chatExpanded: boolean
   activeView: "wiki" | "sources" | "search" | "graph" | "lint" | "review" | "settings"
   llmConfig: LlmConfig
+  searchApiConfig: SearchApiConfig
   dataVersion: number
 
   setProject: (project: WikiProject | null) => void
@@ -26,6 +32,7 @@ interface WikiState {
   setChatExpanded: (expanded: boolean) => void
   setActiveView: (view: WikiState["activeView"]) => void
   setLlmConfig: (config: LlmConfig) => void
+  setSearchApiConfig: (config: SearchApiConfig) => void
   bumpDataVersion: () => void
 }
 
@@ -52,8 +59,14 @@ export const useWikiStore = create<WikiState>((set) => ({
   setFileContent: (fileContent) => set({ fileContent }),
   setChatExpanded: (chatExpanded) => set({ chatExpanded }),
   setActiveView: (activeView) => set({ activeView }),
+  searchApiConfig: {
+    provider: "none",
+    apiKey: "",
+  },
+
   setLlmConfig: (llmConfig) => set({ llmConfig }),
+  setSearchApiConfig: (searchApiConfig) => set({ searchApiConfig }),
   bumpDataVersion: () => set((state) => ({ dataVersion: state.dataVersion + 1 })),
 }))
 
-export type { WikiState, LlmConfig }
+export type { WikiState, LlmConfig, SearchApiConfig }

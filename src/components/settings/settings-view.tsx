@@ -24,12 +24,16 @@ export function SettingsView() {
   const { t } = useTranslation()
   const llmConfig = useWikiStore((s) => s.llmConfig)
   const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
+  const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
+  const setSearchApiConfig = useWikiStore((s) => s.setSearchApiConfig)
 
   const [provider, setProvider] = useState(llmConfig.provider)
   const [apiKey, setApiKey] = useState(llmConfig.apiKey)
   const [model, setModel] = useState(llmConfig.model)
   const [ollamaUrl, setOllamaUrl] = useState(llmConfig.ollamaUrl)
   const [customEndpoint, setCustomEndpoint] = useState(llmConfig.customEndpoint)
+  const [searchProvider, setSearchProvider] = useState(searchApiConfig.provider)
+  const [searchApiKey, setSearchApiKey] = useState(searchApiConfig.apiKey)
   const [saved, setSaved] = useState(false)
   const [currentLang, setCurrentLang] = useState(i18n.language)
 
@@ -41,11 +45,19 @@ export function SettingsView() {
     setCustomEndpoint(llmConfig.customEndpoint)
   }, [llmConfig])
 
+  useEffect(() => {
+    setSearchProvider(searchApiConfig.provider)
+    setSearchApiKey(searchApiConfig.apiKey)
+  }, [searchApiConfig])
+
   const currentProvider = PROVIDERS.find((p) => p.value === provider)
 
   async function handleSave() {
-    const { saveLlmConfig } = await import("@/lib/project-store")
+    const { saveLlmConfig, saveSearchApiConfig } = await import("@/lib/project-store")
     const newConfig = { provider, apiKey, model, ollamaUrl, customEndpoint }
+    const newSearchConfig = { provider: searchProvider, apiKey: searchApiKey }
+    setSearchApiConfig(newSearchConfig)
+    await saveSearchApiConfig(newSearchConfig)
     setLlmConfig(newConfig)
     await saveLlmConfig(newConfig)
     setSaved(true)
@@ -189,6 +201,49 @@ export function SettingsView() {
                 />
               )}
             </div>
+          </div>
+
+          {/* Web Search API section */}
+          <div className="space-y-4 rounded-lg border p-4">
+            <h3 className="font-semibold">Web Search (Deep Research)</h3>
+            <p className="text-xs text-muted-foreground">
+              Enable AI-powered web research to automatically find relevant sources for knowledge gaps.
+            </p>
+
+            <div className="space-y-2">
+              <Label>Search Provider</Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "none" as const, label: "Disabled" },
+                  { value: "tavily" as const, label: "Tavily" },
+                ].map((p) => (
+                  <button
+                    key={p.value}
+                    onClick={() => setSearchProvider(p.value)}
+                    className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                      searchProvider === p.value
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border hover:bg-accent"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {searchProvider !== "none" && (
+              <div className="space-y-2">
+                <Label htmlFor="searchApiKey">API Key</Label>
+                <Input
+                  id="searchApiKey"
+                  type="password"
+                  value={searchApiKey}
+                  onChange={(e) => setSearchApiKey(e.target.value)}
+                  placeholder="Enter your Tavily API key (tavily.com)"
+                />
+              </div>
+            )}
           </div>
 
           <Button onClick={handleSave} className="w-full">

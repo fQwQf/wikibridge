@@ -1,4 +1,5 @@
 import { useCallback } from "react"
+import { deepResearch } from "@/lib/deep-research"
 import {
   AlertTriangle,
   Copy,
@@ -165,6 +166,23 @@ export function ReviewView() {
       } else {
         resolveItem(id, action)
       }
+    } else if (action === "__deep_research__" && project) {
+      // Deep Research: use web search + LLM to explore the topic
+      const item = items.find((i) => i.id === id)
+      if (item) {
+        const llmConfig = useWikiStore.getState().llmConfig
+        const searchConfig = useWikiStore.getState().searchApiConfig
+        const topic = item.title.replace(/^(Save to Wiki|Create|Research)[:\s]*/i, "").trim() || item.description.split("\n")[0]
+        try {
+          const result = await deepResearch(project.path, topic, llmConfig, searchConfig)
+          resolveItem(id, result.savedPath ? `Researched → ${result.savedPath}` : "Researched (no results)")
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          resolveItem(id, `Research failed: ${msg}`)
+        }
+      } else {
+        resolveItem(id, action)
+      }
     } else {
       resolveItem(id, action)
     }
@@ -269,6 +287,16 @@ function ReviewCard({
 
       {!item.resolved ? (
         <div className="flex flex-wrap gap-1.5">
+          {(item.type === "suggestion" || item.type === "missing-page") && (
+            <Button
+              variant="default"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => onResolve(item.id, "__deep_research__")}
+            >
+              🔍 Deep Research
+            </Button>
+          )}
           {item.options.map((opt) => (
             <Button
               key={opt.action}
