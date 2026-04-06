@@ -2,21 +2,36 @@ import { useState } from "react"
 import ReactMarkdown from "react-markdown"
 import {
   Search, Loader2, CheckCircle2, AlertCircle, ChevronRight, ChevronDown, X,
-  ExternalLink, FileText,
+  ExternalLink, FileText, Send,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useResearchStore, type ResearchTask } from "@/stores/research-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile } from "@/commands/fs"
+import { queueResearch } from "@/lib/deep-research"
 
 export function ResearchPanel() {
   const tasks = useResearchStore((s) => s.tasks)
   const removeTask = useResearchStore((s) => s.removeTask)
   const setPanelOpen = useResearchStore((s) => s.setPanelOpen)
+  const project = useWikiStore((s) => s.project)
+  const llmConfig = useWikiStore((s) => s.llmConfig)
+  const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
+  const [inputValue, setInputValue] = useState("")
 
   const running = tasks.filter((t) => ["searching", "synthesizing", "saving"].includes(t.status))
   const queued = tasks.filter((t) => t.status === "queued")
-  const done = tasks.filter((t) => t.status === "done" || t.status === "error")
+
+  function handleStartResearch() {
+    const topic = inputValue.trim()
+    if (!topic || !project) return
+    if (searchApiConfig.provider === "none" || !searchApiConfig.apiKey) {
+      window.alert("Web Search not configured. Go to Settings → Web Search to add a Tavily API key.")
+      return
+    }
+    queueResearch(project.path, topic, llmConfig, searchApiConfig)
+    setInputValue("")
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -26,7 +41,7 @@ export function ResearchPanel() {
           <span className="text-sm font-semibold">Deep Research</span>
           {(running.length > 0 || queued.length > 0) && (
             <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              {running.length} running{queued.length > 0 ? `, ${queued.length} queued` : ""}
+              {running.length} active{queued.length > 0 ? `, ${queued.length} queued` : ""}
             </span>
           )}
         </div>
@@ -38,11 +53,26 @@ export function ResearchPanel() {
         </button>
       </div>
 
+      {/* Research input */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
+        <input
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleStartResearch() }}
+          placeholder="Enter a research topic..."
+          className="flex-1 rounded border bg-background px-2 py-1 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+        />
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleStartResearch} disabled={!inputValue.trim()}>
+          <Send className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 p-8 text-center text-xs text-muted-foreground">
             <Search className="h-8 w-8 opacity-20" />
             <p>No research tasks yet</p>
+            <p>Enter a topic above or click "Deep Research" in Review</p>
           </div>
         ) : (
           <div className="flex flex-col gap-1 p-2">
