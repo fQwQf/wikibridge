@@ -281,13 +281,8 @@ function buildAnalysisPrompt(purpose: string, index: string): string {
  * Step 2 prompt: AI takes its own analysis and generates wiki files + review items.
  */
 function buildGenerationPrompt(schema: string, purpose: string, index: string, sourceFileName: string): string {
-  // Derive a slug from the source filename for the source summary page
-  const sourceSlug = sourceFileName
-    .replace(/\.[^.]+$/, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
+  // Use original filename (without extension) as the source summary page name
+  const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, "")
 
   return [
     "You are a wiki maintainer. Based on the analysis provided, generate wiki files.",
@@ -305,7 +300,7 @@ function buildGenerationPrompt(schema: string, purpose: string, index: string, s
     "---END FILE---",
     "",
     "Generate:",
-    `1. A source summary page at **wiki/sources/${sourceSlug}.md** (MUST use this exact path)`,
+    `1. A source summary page at **wiki/sources/${sourceBaseName}.md** (MUST use this exact path)`,
     "2. Entity pages in wiki/entities/ for key entities identified in the analysis",
     "3. Concept pages in wiki/concepts/ for key concepts identified in the analysis",
     "4. An updated wiki/index.md — add new entries to existing categories, preserve all existing entries",

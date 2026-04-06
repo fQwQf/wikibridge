@@ -84,15 +84,15 @@ export function SourcesView() {
 
     const importedPaths: string[] = []
     for (const sourcePath of paths) {
-      const fileName = sourcePath.split("/").pop() || sourcePath.split("\\").pop() || "unknown"
-      const destPath = `${project.path}/raw/sources/${fileName}`
+      const originalName = sourcePath.split("/").pop() || sourcePath.split("\\").pop() || "unknown"
+      const destPath = await getUniqueDestPath(`${project.path}/raw/sources`, originalName)
       try {
         await copyFile(sourcePath, destPath)
         importedPaths.push(destPath)
         // Pre-process file (extract text from PDF, etc.) for instant preview later
         preprocessFile(destPath).catch(() => {})
       } catch (err) {
-        console.error(`Failed to import ${fileName}:`, err)
+        console.error(`Failed to import ${originalName}:`, err)
       }
     }
 
@@ -262,6 +262,49 @@ export function SourcesView() {
       </div>
     </div>
   )
+}
+
+/**
+ * Generate a unique destination path. If file already exists, adds date/counter suffix.
+ * "file.pdf" → "file.pdf" (first time)
+ * "file.pdf" → "file-20260406.pdf" (conflict)
+ * "file.pdf" → "file-20260406-2.pdf" (second conflict same day)
+ */
+async function getUniqueDestPath(dir: string, fileName: string): Promise<string> {
+  const basePath = `${dir}/${fileName}`
+
+  // Check if file exists by trying to read it
+  try {
+    await readFile(basePath)
+  } catch {
+    // File doesn't exist — use original name
+    return basePath
+  }
+
+  // File exists — add date suffix
+  const ext = fileName.includes(".") ? fileName.slice(fileName.lastIndexOf(".")) : ""
+  const nameWithoutExt = ext ? fileName.slice(0, -ext.length) : fileName
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+
+  const withDate = `${dir}/${nameWithoutExt}-${date}${ext}`
+  try {
+    await readFile(withDate)
+  } catch {
+    return withDate
+  }
+
+  // Date suffix also exists — add counter
+  for (let i = 2; i <= 99; i++) {
+    const withCounter = `${dir}/${nameWithoutExt}-${date}-${i}${ext}`
+    try {
+      await readFile(withCounter)
+    } catch {
+      return withCounter
+    }
+  }
+
+  // Shouldn't happen, but fallback
+  return `${dir}/${nameWithoutExt}-${date}-${Date.now()}${ext}`
 }
 
 function flattenFiles(nodes: FileNode[]): FileNode[] {
