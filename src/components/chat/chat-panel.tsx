@@ -52,109 +52,32 @@ export function ChatPanel() {
           readFile(`${project.path}/purpose.md`).catch(() => ""),
         ])
 
-        // Search wiki using current question + recent conversation context
-        const recentContext = useChatStore.getState().messages
-          .filter((m) => m.role === "user")
-          .slice(-3)
-          .map((m) => m.content)
-          .join(" ")
-        const searchQuery = `${text} ${recentContext}`.slice(0, 500)
-        const searchResults = await searchWiki(project.path, searchQuery)
+        // Search wiki + raw sources for pages relevant to the current question only
+        const searchResults = await searchWiki(project.path, text)
 
-        // Also search with just the current question for precision
-        const directResults = await searchWiki(project.path, text)
-
-        // Merge and deduplicate results
-        const seenPaths = new Set<string>()
-        const mergedResults = [...directResults, ...searchResults].filter((r) => {
-          if (seenPaths.has(r.path)) return false
-          seenPaths.add(r.path)
-          return true
-        })
-
-        // Read the full content of top relevant pages (max 10 to fit context)
+        // Read the full content of top relevant pages (max 5 to keep context focused)
         const relevantPages: { title: string; path: string; content: string }[] = []
-        for (const result of mergedResults.slice(0, 10)) {
+        for (const result of searchResults.slice(0, 5)) {
           try {
             const content = await readFile(result.path)
             const relativePath = result.path.replace(project.path + "/", "")
-            relevantPages.push({ title: result.title, path: relativePath, content })
+            // Truncate large files
+            const truncated = content.length > 15000
+              ? content.slice(0, 15000) + "\n\n[...truncated...]"
+              : content
+            relevantPages.push({ title: result.title, path: relativePath, content: truncated })
           } catch {
             // skip unreadable pages
           }
         }
 
-        // If search found nothing, read all wiki pages + raw sources (for small wikis)
+        // If search found nothing (new wiki or very specific question), read index + overview only
         if (relevantPages.length === 0) {
-          // Read all wiki pages
           try {
-            const wikiTree = await listDirectory(`${project.path}/wiki`)
-            const allFiles = flattenMdFiles(wikiTree)
-            for (const file of allFiles.slice(0, 15)) {
-              try {
-                const content = await readFile(file.path)
-                const relativePath = file.path.replace(project.path + "/", "")
-                const title = file.name.replace(".md", "")
-                relevantPages.push({ title, path: relativePath, content })
-              } catch {
-                // skip
-              }
-            }
+            const overview = await readFile(`${project.path}/wiki/overview.md`)
+            relevantPages.push({ title: "Overview", path: "wiki/overview.md", content: overview })
           } catch {
-            // ignore
-          }
-          // Also read raw sources
-          try {
-            const rawTree = await listDirectory(`${project.path}/raw/sources`)
-            const rawFiles = flattenAllFiles(rawTree)
-            for (const file of rawFiles.slice(0, 5)) {
-              try {
-                const content = await readFile(file.path)
-                // Truncate large source files to avoid overwhelming context
-                const truncated = content.length > 20000
-                  ? content.slice(0, 20000) + "\n\n[...truncated...]"
-                  : content
-                relevantPages.push({
-                  title: `[Source] ${file.name}`,
-                  path: `raw/sources/${file.name}`,
-                  content: truncated,
-                })
-              } catch {
-                // skip
-              }
-            }
-          } catch {
-            // ignore
-          }
-        }
-
-        // Always include matching raw sources in context (search results may include them)
-        const rawSourcePaths = relevantPages
-          .filter((p) => p.path.startsWith("raw/"))
-          .map((p) => p.path)
-
-        // If no raw sources found via search, add them for context
-        if (rawSourcePaths.length === 0) {
-          try {
-            const rawTree = await listDirectory(`${project.path}/raw/sources`)
-            const rawFiles = flattenAllFiles(rawTree)
-            for (const file of rawFiles.slice(0, 3)) {
-              try {
-                const content = await readFile(file.path)
-                const truncated = content.length > 15000
-                  ? content.slice(0, 15000) + "\n\n[...truncated...]"
-                  : content
-                relevantPages.push({
-                  title: `[Source] ${file.name}`,
-                  path: `raw/sources/${file.name}`,
-                  content: truncated,
-                })
-              } catch {
-                // skip
-              }
-            }
-          } catch {
-            // ignore
+            // no overview
           }
         }
 
