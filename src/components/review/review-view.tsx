@@ -44,9 +44,18 @@ export function ReviewView() {
       const item = items.find((i) => i.id === id)
       if (item) {
         const llmConfig = useWikiStore.getState().llmConfig
-        const topic = item.title.replace(/^(Save to Wiki|Create|Research)[:\s]*/i, "").trim() || item.description.split("\n")[0]
-        queueResearch(project.path, topic, llmConfig, searchConfig)
-        resolveItem(id, "Queued for research")
+        // Use pre-generated search queries if available, otherwise fall back to title
+        if (item.searchQueries && item.searchQueries.length > 0) {
+          // Queue a research task for each search query
+          for (const query of item.searchQueries) {
+            queueResearch(project.path, query, llmConfig, searchConfig)
+          }
+          resolveItem(id, `Queued ${item.searchQueries.length} research tasks`)
+        } else {
+          const topic = item.title.replace(/^(Save to Wiki|Create|Research)[:\s]*/i, "").trim() || item.description.split("\n")[0]
+          queueResearch(project.path, topic, llmConfig, searchConfig)
+          resolveItem(id, "Queued for research")
+        }
       } else {
         resolveItem(id, action)
       }

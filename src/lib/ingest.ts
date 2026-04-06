@@ -203,10 +203,17 @@ function parseReviewBlocks(
       ? pagesMatch[1].split(",").map((p) => p.trim())
       : undefined
 
-    // Description is the body minus OPTIONS and PAGES lines
+    // Parse SEARCH line (optimized search queries for Deep Research)
+    const searchMatch = body.match(/^SEARCH:\s*(.+)$/m)
+    const searchQueries = searchMatch
+      ? searchMatch[1].split("|").map((q) => q.trim()).filter((q) => q.length > 0)
+      : undefined
+
+    // Description is the body minus OPTIONS, PAGES, and SEARCH lines
     const description = body
       .replace(/^OPTIONS:.*$/m, "")
       .replace(/^PAGES:.*$/m, "")
+      .replace(/^SEARCH:.*$/m, "")
       .trim()
 
     items.push({
@@ -215,6 +222,7 @@ function parseReviewBlocks(
       description,
       sourcePath,
       affectedPages,
+      searchQueries,
       options,
     })
   }
@@ -306,6 +314,7 @@ function buildGenerationPrompt(schema: string, purpose: string, index: string): 
     "Description of what needs the user's attention.",
     "OPTIONS: Option A | Option B | Option C",
     "PAGES: wiki/page1.md, wiki/page2.md",
+    "SEARCH: search query 1 | search query 2 | search query 3",
     "---END REVIEW---",
     "",
     "Review types and when to use:",
@@ -313,6 +322,12 @@ function buildGenerationPrompt(schema: string, purpose: string, index: string): 
     "- duplicate: an entity/concept might already exist under a different name in the index",
     "- missing-page: an important concept is referenced but has no dedicated page",
     "- suggestion: ideas for further research, related sources to look for, or connections worth exploring",
+    "",
+    "IMPORTANT for suggestion and missing-page types:",
+    "- The SEARCH field must contain 2-3 web search queries optimized for finding relevant papers, articles, or documentation.",
+    "- These should be specific, keyword-rich queries suitable for a search engine — NOT titles or sentences.",
+    "- Example: for a suggestion about 'automated debt detection in AI-generated code', good SEARCH queries would be:",
+    "  SEARCH: automated technical debt detection AI generated code | software quality metrics LLM code generation | static analysis tools agentic software development",
     "",
     "Only create reviews for things that genuinely need human input. Don't create trivial reviews.",
     "",

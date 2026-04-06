@@ -12,6 +12,7 @@ export interface ReviewItem {
   description: string
   sourcePath?: string
   affectedPages?: string[]
+  searchQueries?: string[]
   options: ReviewOption[]
   resolved: boolean
   resolvedAction?: string
