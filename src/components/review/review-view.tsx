@@ -34,6 +34,25 @@ export function ReviewView() {
   const setFileTree = useWikiStore((s) => s.setFileTree)
 
   const handleResolve = useCallback(async (id: string, action: string) => {
+    // Deep Research — must be checked FIRST before any fuzzy matching
+    if (action === "__deep_research__" && project) {
+      const searchConfig = useWikiStore.getState().searchApiConfig
+      if (searchConfig.provider === "none" || !searchConfig.apiKey) {
+        window.alert("Web Search not configured. Go to Settings → Web Search to add a Tavily API key first.")
+        return
+      }
+      const item = items.find((i) => i.id === id)
+      if (item) {
+        const llmConfig = useWikiStore.getState().llmConfig
+        const topic = item.title.replace(/^(Save to Wiki|Create|Research)[:\s]*/i, "").trim() || item.description.split("\n")[0]
+        queueResearch(project.path, topic, llmConfig, searchConfig)
+        resolveItem(id, "Queued for research")
+      } else {
+        resolveItem(id, action)
+      }
+      return
+    }
+
     if (action.startsWith("save:") && project) {
       // Decode and save the content to wiki
       try {
@@ -187,23 +206,6 @@ export function ReviewView() {
           console.error("Failed to create page from review:", err)
           resolveItem(id, "Create failed")
         }
-      } else {
-        resolveItem(id, action)
-      }
-    } else if (action === "__deep_research__" && project) {
-      // Check if search API is configured
-      const searchConfig = useWikiStore.getState().searchApiConfig
-      if (searchConfig.provider === "none" || !searchConfig.apiKey) {
-        window.alert("Web Search not configured. Go to Settings → Web Search to add a Tavily API key first.")
-        return
-      }
-      // Queue deep research task
-      const item = items.find((i) => i.id === id)
-      if (item) {
-        const llmConfig = useWikiStore.getState().llmConfig
-        const topic = item.title.replace(/^(Save to Wiki|Create|Research)[:\s]*/i, "").trim() || item.description.split("\n")[0]
-        queueResearch(project.path, topic, llmConfig, searchConfig)
-        resolveItem(id, "Queued for research")
       } else {
         resolveItem(id, action)
       }
