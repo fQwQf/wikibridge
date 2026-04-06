@@ -187,7 +187,18 @@ function SaveToWikiButton({ content, visible }: { content: string; visible: bool
 }
 
 function SourceFilesBar({ content }: { content: string }) {
-  const cited = useMemo(() => extractCitedSources(content), [content])
+  // Ensure source files are loaded
+  const project = useWikiStore((s) => s.project)
+  const fileTree = useWikiStore((s) => s.fileTree)
+
+  useEffect(() => {
+    if (!project) return
+    listDirectory(`${project.path}/raw/sources`)
+      .then((tree) => { cachedSourceFiles = flattenNames(tree) })
+      .catch(() => {})
+  }, [project, fileTree])
+
+  const cited = useMemo(() => extractCitedSources(content), [content, fileTree])
 
   if (cited.length === 0) return null
 
