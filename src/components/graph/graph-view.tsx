@@ -3,19 +3,21 @@ import Graph from "graphology"
 import { SigmaContainer, useLoadGraph, useRegisterEvents, useSigma } from "@react-sigma/core"
 import "@react-sigma/core/lib/style.css"
 import forceAtlas2 from "graphology-layout-forceatlas2"
-import { Network, RefreshCw } from "lucide-react"
+import { Network, RefreshCw, ZoomIn, ZoomOut, Maximize } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile } from "@/commands/fs"
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "@/lib/wiki-graph"
 
 const NODE_TYPE_COLORS: Record<string, string> = {
-  entity: "#3b82f6",    // blue
-  concept: "#a855f7",   // purple
-  source: "#f97316",    // orange
-  query: "#22c55e",     // green
-  synthesis: "#ef4444", // red
-  overview: "#eab308",  // yellow
-  other: "#9ca3af",     // gray
+  entity: "#60a5fa",    // blue-400
+  concept: "#c084fc",   // purple-400
+  source: "#fb923c",    // orange-400
+  query: "#4ade80",     // green-400
+  synthesis: "#f87171",  // red-400
+  overview: "#facc15",  // yellow-400
+  comparison: "#2dd4bf", // teal-400
+  other: "#94a3b8",     // slate-400
 }
 
 const NODE_TYPE_LABELS: Record<string, string> = {
@@ -25,17 +27,24 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   query: "Query",
   synthesis: "Synthesis",
   overview: "Overview",
+  comparison: "Comparison",
   other: "Other",
 }
 
-const BASE_NODE_SIZE = 6
-const MAX_NODE_SIZE = 24
+const BASE_NODE_SIZE = 8
+const MAX_NODE_SIZE = 28
 
 function nodeColor(type: string): string {
   return NODE_TYPE_COLORS[type] ?? NODE_TYPE_COLORS.other
 }
 
-/** Mix two hex colors. ratio=0 returns color1, ratio=1 returns color2 */
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
 function mixColor(color1: string, color2: string, ratio: number): string {
   const hex = (c: string) => parseInt(c, 16)
   const r1 = hex(color1.slice(1, 3)), g1 = hex(color1.slice(3, 5)), b1 = hex(color1.slice(5, 7))
@@ -49,22 +58,17 @@ function mixColor(color1: string, color2: string, ratio: number): string {
 function nodeSize(linkCount: number, maxLinks: number): number {
   if (maxLinks === 0) return BASE_NODE_SIZE
   const ratio = linkCount / maxLinks
-  return BASE_NODE_SIZE + ratio * (MAX_NODE_SIZE - BASE_NODE_SIZE)
+  return BASE_NODE_SIZE + Math.sqrt(ratio) * (MAX_NODE_SIZE - BASE_NODE_SIZE)
 }
 
-// --- Inner components that use sigma hooks (must be children of SigmaContainer) ---
+// --- Inner components ---
 
-interface GraphLoaderProps {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
-}
-
-function GraphLoader({ nodes, edges }: GraphLoaderProps) {
+function GraphLoader({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] }) {
   const loadGraph = useLoadGraph()
 
   useEffect(() => {
     const graph = new Graph()
-    const maxLinks = Math.max(...nodes.map((n) => n.linkCount), 0)
+    const maxLinks = Math.max(...nodes.map((n) => n.linkCount), 1)
 
     for (const node of nodes) {
       graph.addNode(node.id, {
@@ -80,18 +84,27 @@ function GraphLoader({ nodes, edges }: GraphLoaderProps) {
 
     for (const edge of edges) {
       if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
-        graph.addEdge(edge.source, edge.target, {
-          color: "#d1d5db",
-          size: 1.5,
-        })
+        const edgeKey = `${edge.source}->${edge.target}`
+        if (!graph.hasEdge(edgeKey) && !graph.hasEdge(`${edge.target}->${edge.source}`)) {
+          graph.addEdgeWithKey(edgeKey, edge.source, edge.target, {
+            color: "#cbd5e1",
+            size: 1,
+          })
+        }
       }
     }
 
-    // Run ForceAtlas2 layout for positioning
     if (nodes.length > 1) {
+      const settings = forceAtlas2.inferSettings(graph)
       forceAtlas2.assign(graph, {
-        iterations: 100,
-        settings: forceAtlas2.inferSettings(graph),
+        iterations: 150,
+        settings: {
+          ...settings,
+          gravity: 1,
+          scalingRatio: 2,
+          strongGravityMode: true,
+          barnesHutOptimize: nodes.length > 50,
+        },
       })
     }
 
@@ -101,31 +114,22 @@ function GraphLoader({ nodes, edges }: GraphLoaderProps) {
   return null
 }
 
-interface EventHandlerProps {
-  onNodeClick: (nodeId: string) => void
-}
-
-function EventHandler({ onNodeClick }: EventHandlerProps) {
+function EventHandler({ onNodeClick }: { onNodeClick: (nodeId: string) => void }) {
   const registerEvents = useRegisterEvents()
   const sigma = useSigma()
 
   useEffect(() => {
     registerEvents({
-      clickNode: ({ node }) => {
-        onNodeClick(node)
-      },
+      clickNode: ({ node }) => onNodeClick(node),
       enterNode: ({ node }) => {
         const container = sigma.getContainer()
         container.style.cursor = "pointer"
         const graph = sigma.getGraph()
         graph.setNodeAttribute(node, "hovering", true)
-        // Dim non-neighbor nodes
         const neighbors = new Set(graph.neighbors(node))
         neighbors.add(node)
         graph.forEachNode((n) => {
-          if (!neighbors.has(n)) {
-            graph.setNodeAttribute(n, "dimmed", true)
-          }
+          if (!neighbors.has(n)) graph.setNodeAttribute(n, "dimmed", true)
         })
         graph.forEachEdge((e, _attrs, source, target) => {
           if (source !== node && target !== node) {
@@ -156,7 +160,49 @@ function EventHandler({ onNodeClick }: EventHandlerProps) {
   return null
 }
 
-// --- Main GraphView component ---
+function ZoomControls() {
+  const sigma = useSigma()
+
+  return (
+    <div className="absolute top-3 right-3 flex flex-col gap-1">
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7 bg-background/80 backdrop-blur-sm"
+        onClick={() => {
+          const camera = sigma.getCamera()
+          camera.animatedZoom({ duration: 200 })
+        }}
+      >
+        <ZoomIn className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7 bg-background/80 backdrop-blur-sm"
+        onClick={() => {
+          const camera = sigma.getCamera()
+          camera.animatedUnzoom({ duration: 200 })
+        }}
+      >
+        <ZoomOut className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7 bg-background/80 backdrop-blur-sm"
+        onClick={() => {
+          const camera = sigma.getCamera()
+          camera.animatedReset({ duration: 300 })
+        }}
+      >
+        <Maximize className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
+}
+
+// --- Main component ---
 
 export function GraphView() {
   const project = useWikiStore((s) => s.project)
@@ -169,6 +215,7 @@ export function GraphView() {
   const [edges, setEdges] = useState<GraphEdge[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hoveredType, setHoveredType] = useState<string | null>(null)
   const lastLoadedVersion = useRef(-1)
 
   const loadGraph = useCallback(async () => {
@@ -188,7 +235,6 @@ export function GraphView() {
     }
   }, [project])
 
-  // Load on mount; reload if data changed since last load
   useEffect(() => {
     if (dataVersion !== lastLoadedVersion.current) {
       loadGraph()
@@ -210,6 +256,12 @@ export function GraphView() {
     },
     [nodes, setSelectedFile, setFileContent, setActiveView],
   )
+
+  // Count nodes by type for legend
+  const typeCounts = nodes.reduce<Record<string, number>>((acc, n) => {
+    acc[n.type] = (acc[n.type] ?? 0) + 1
+    return acc
+  }, {})
 
   if (!project) {
     return (
@@ -234,13 +286,7 @@ export function GraphView() {
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <Network className="h-10 w-10 opacity-30" />
         <p className="text-sm text-destructive">{error}</p>
-        <button
-          type="button"
-          onClick={loadGraph}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent transition-colors"
-        >
-          Retry
-        </button>
+        <Button variant="outline" size="sm" onClick={loadGraph}>Retry</Button>
       </div>
     )
   }
@@ -250,7 +296,7 @@ export function GraphView() {
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <Network className="h-10 w-10 opacity-30" />
         <p className="text-sm">No pages yet</p>
-        <p className="text-xs">Create some wiki pages to see the graph</p>
+        <p className="text-xs">Import sources to start building the knowledge graph</p>
       </div>
     )
   }
@@ -259,60 +305,59 @@ export function GraphView() {
     <div className="relative flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-2 shrink-0">
-        <div className="flex items-center gap-2">
-          <Network className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Graph</span>
-          <span className="text-xs text-muted-foreground">
-            {nodes.length} node{nodes.length !== 1 ? "s" : ""},{" "}
-            {edges.length} edge{edges.length !== 1 ? "s" : ""}
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Network className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Knowledge Graph</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="rounded bg-muted px-1.5 py-0.5">{nodes.length} pages</span>
+            <span className="rounded bg-muted px-1.5 py-0.5">{edges.length} links</span>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={loadGraph}
-          title="Reload graph"
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors"
-        >
+        <Button variant="ghost" size="sm" onClick={loadGraph} className="text-xs gap-1">
           <RefreshCw className="h-3.5 w-3.5" />
           Reload
-        </button>
+        </Button>
       </div>
 
       {/* Graph canvas */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden bg-slate-50 dark:bg-slate-950">
         <SigmaContainer
           style={{ width: "100%", height: "100%", background: "transparent" }}
           settings={{
             renderEdgeLabels: false,
-            defaultEdgeColor: "#d1d5db",
-            defaultNodeColor: "#9ca3af",
-            labelSize: 12,
+            defaultEdgeColor: "#cbd5e1",
+            defaultNodeColor: "#94a3b8",
+            labelSize: 13,
             labelWeight: "bold",
-            labelColor: { color: "#374151" },
-            labelDensity: 0.5,
-            labelRenderedSizeThreshold: 8,
+            labelColor: { color: "#1e293b" },
+            labelDensity: 0.4,
+            labelRenderedSizeThreshold: 6,
+            stagePadding: 30,
             nodeReducer: (_node, attrs) => {
               const result = { ...attrs }
               if (attrs.hovering) {
-                result.size = (attrs.size ?? BASE_NODE_SIZE) * 1.3
+                result.size = (attrs.size ?? BASE_NODE_SIZE) * 1.4
                 result.zIndex = 10
-                result.label = attrs.label
                 result.forceLabel = true
               }
               if (attrs.dimmed) {
-                result.color = mixColor(attrs.color ?? "#9ca3af", "#f3f4f6", 0.7)
+                result.color = mixColor(attrs.color ?? "#94a3b8", "#e2e8f0", 0.75)
                 result.label = ""
+                result.size = (attrs.size ?? BASE_NODE_SIZE) * 0.6
               }
               return result
             },
             edgeReducer: (_edge, attrs) => {
               const result = { ...attrs }
               if (attrs.dimmed) {
-                result.color = "#f3f4f6"
+                result.color = "#f1f5f9"
+                result.size = 0.5
               }
               if (attrs.highlighted) {
-                result.color = "#6b7280"
-                result.size = 2
+                result.color = "#475569"
+                result.size = 2.5
               }
               return result
             },
@@ -320,31 +365,37 @@ export function GraphView() {
         >
           <GraphLoader nodes={nodes} edges={edges} />
           <EventHandler onNodeClick={handleNodeClick} />
+          <ZoomControls />
         </SigmaContainer>
 
         {/* Legend */}
-        <GraphLegend />
-      </div>
-    </div>
-  )
-}
-
-function GraphLegend() {
-  const usedTypes = Object.entries(NODE_TYPE_LABELS)
-
-  return (
-    <div className="absolute bottom-4 right-4 rounded-lg border bg-background/90 backdrop-blur-sm px-3 py-2 text-xs shadow-sm">
-      <div className="mb-1.5 font-medium text-muted-foreground">Node types</div>
-      <div className="flex flex-col gap-1">
-        {usedTypes.map(([type, label]) => (
-          <div key={type} className="flex items-center gap-2">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: NODE_TYPE_COLORS[type] }}
-            />
-            <span className="text-muted-foreground">{label}</span>
+        <div className="absolute bottom-3 left-3 rounded-lg border bg-background/90 backdrop-blur-sm px-3 py-2 text-xs shadow-sm">
+          <div className="mb-1.5 font-semibold text-foreground">Node Types</div>
+          <div className="flex flex-col gap-0.5">
+            {Object.entries(NODE_TYPE_LABELS)
+              .filter(([type]) => (typeCounts[type] ?? 0) > 0)
+              .map(([type, label]) => (
+                <div
+                  key={type}
+                  className="flex items-center gap-2 rounded px-1 py-0.5 transition-colors hover:bg-accent/50"
+                  onMouseEnter={() => setHoveredType(type)}
+                  onMouseLeave={() => setHoveredType(null)}
+                >
+                  <span
+                    className="inline-block h-3 w-3 rounded-full shrink-0 shadow-sm"
+                    style={{
+                      backgroundColor: NODE_TYPE_COLORS[type],
+                      boxShadow: `0 0 4px ${hexToRgba(NODE_TYPE_COLORS[type] ?? "#94a3b8", 0.4)}`,
+                    }}
+                  />
+                  <span className={hoveredType === type ? "text-foreground font-medium" : "text-muted-foreground"}>
+                    {label}
+                  </span>
+                  <span className="text-muted-foreground/60 ml-auto">{typeCounts[type]}</span>
+                </div>
+              ))}
           </div>
-        ))}
+        </div>
       </div>
     </div>
   )
