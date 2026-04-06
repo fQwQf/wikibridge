@@ -115,6 +115,30 @@ export function ReviewView() {
         console.error("Failed to delete:", err)
         resolveItem(id, "Delete failed")
       }
+    } else if (actionLooksLikeResearch(action) && project) {
+      // Actions with "research" trigger deep research, not just page creation
+      const searchConfig = useWikiStore.getState().searchApiConfig
+      if (searchConfig.provider === "none" || !searchConfig.apiKey) {
+        // No search API — fall through to create a page instead
+        const item = items.find((i) => i.id === id)
+        if (item) {
+          handleResolve(id, "__create_page__:" + action)
+        }
+        return
+      }
+      const item = items.find((i) => i.id === id)
+      if (item) {
+        const llmConfig = useWikiStore.getState().llmConfig
+        const topic = action.replace(/^research\s*/i, "").trim() || item.description.split("\n")[0]
+        queueResearch(project.path, topic, llmConfig, searchConfig)
+        resolveItem(id, "Queued for deep research")
+      } else {
+        resolveItem(id, action)
+      }
+    } else if (action.startsWith("__create_page__:") && project) {
+      // Explicit create page fallback
+      const realAction = action.slice("__create_page__:".length)
+      await createPageFromReview(id, realAction, items, project.path)
     } else if (actionLooksLikeCreate(action) && project) {
       // Create a wiki page from the review item's content
       const item = items.find((i) => i.id === id)
@@ -316,6 +340,20 @@ function ReviewCard({
         </div>
       )}
     </div>
+  )
+}
+
+/** Detect if an action implies deep research (web search + LLM synthesis) */
+function actionLooksLikeResearch(action: string): boolean {
+  const lower = action.toLowerCase()
+  return (
+    lower.includes("research") ||
+    lower.includes("investigate") ||
+    lower.includes("explore") ||
+    lower.includes("look into") ||
+    lower.includes("研究") ||
+    lower.includes("调研") ||
+    lower.includes("探索")
   )
 }
 
