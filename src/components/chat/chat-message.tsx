@@ -245,8 +245,8 @@ export function StreamingMessage({ content }: StreamingMessageProps) {
 }
 
 function MarkdownContent({ content }: { content: string }) {
-  // Strip hidden sources comment before rendering
-  const cleaned = content.replace(/<!--\s*sources:.*?-->/g, "").trimEnd()
+  // Strip all hidden comments before rendering
+  const cleaned = content.replace(/<!--.*?-->/gs, "").trimEnd()
   const processed = useMemo(() => processContent(cleaned), [cleaned])
 
   return (
