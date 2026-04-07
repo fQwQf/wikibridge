@@ -115,73 +115,427 @@ fn extract_pdf_text(path: &str) -> Result<String, String> {
         .map_err(|e| format!("Failed to extract text from PDF '{}': {}", path, e))
 }
 
-/// Extract text from Office Open XML formats (docx, pptx, xlsx) and OpenDocument formats.
-/// These are ZIP archives containing XML files with the actual content.
+/// Extract text from Office Open XML formats, converting to Markdown.
 fn extract_office_text(path: &str, ext: &str) -> Result<String, String> {
     let file = fs::File::open(path)
         .map_err(|e| format!("Failed to open '{}': {}", path, e))?;
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| format!("Failed to read ZIP archive '{}': {}", path, e))?;
 
-    let xml_paths: Vec<&str> = match ext {
-        "docx" => vec!["word/document.xml"],
-        "pptx" => {
-            // PPTX has slide1.xml, slide2.xml, etc.
-            let names: Vec<String> = (0..archive.len())
-                .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
-                .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
-                .collect();
-            return extract_xml_text_from_paths(&mut archive, &names);
-        }
-        "xlsx" => vec!["xl/sharedStrings.xml"],
-        "odt" | "ods" | "odp" => vec!["content.xml"],
-        _ => vec![],
-    };
-
-    extract_xml_text_from_paths(&mut archive, &xml_paths.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    match ext {
+        "docx" => extract_docx_markdown(&mut archive),
+        "pptx" => extract_pptx_markdown(&mut archive),
+        "xlsx" => extract_xlsx_markdown(&mut archive),
+        "odt" | "ods" | "odp" => extract_odf_text(&mut archive),
+        _ => Ok("[Unsupported format]".to_string()),
+    }
 }
 
-fn extract_xml_text_from_paths(
-    archive: &mut zip::ZipArchive<fs::File>,
-    paths: &[String],
-) -> Result<String, String> {
-    let mut all_text = Vec::new();
+fn read_zip_file(archive: &mut zip::ZipArchive<fs::File>, name: &str) -> Option<String> {
+    let mut file = archive.by_name(name).ok()?;
+    let mut content = String::new();
+    file.read_to_string(&mut content).ok()?;
+    Some(content)
+}
 
-    for xml_path in paths {
-        let mut file = match archive.by_name(xml_path) {
-            Ok(f) => f,
-            Err(_) => continue,
+fn decode_xml_entities(text: &str) -> String {
+    text.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#10;", "\n")
+        .replace("&#13;", "")
+}
+
+/// Extract DOCX to Markdown preserving headings, paragraphs, lists, tables, bold/italic.
+fn extract_docx_markdown(archive: &mut zip::ZipArchive<fs::File>) -> Result<String, String> {
+    let xml = read_zip_file(archive, "word/document.xml")
+        .ok_or_else(|| "No document.xml found".to_string())?;
+
+    let mut result = String::new();
+    let mut i = 0;
+    let chars: Vec<char> = xml.chars().collect();
+    let len = chars.len();
+
+    // Track current paragraph state
+    let mut in_paragraph = false;
+    let mut paragraph_text = String::new();
+    let mut is_heading = false;
+    let mut heading_level: u8 = 1;
+    let mut is_bold = false;
+    let mut is_italic = false;
+    let mut in_table = false;
+    let mut table_row: Vec<String> = Vec::new();
+    let mut table_cell_text = String::new();
+    let mut in_cell = false;
+    let mut is_first_table_row = true;
+    let mut in_list_item = false;
+
+    while i < len {
+        if chars[i] == '<' {
+            // Read tag name
+            let tag_start = i;
+            i += 1;
+            let is_closing = i < len && chars[i] == '/';
+            if is_closing { i += 1; }
+
+            let mut tag_name = String::new();
+            while i < len && chars[i] != '>' && chars[i] != ' ' && chars[i] != '/' {
+                tag_name.push(chars[i]);
+                i += 1;
+            }
+
+            // Read rest of tag to find attributes
+            let mut tag_content = String::new();
+            while i < len && chars[i] != '>' {
+                tag_content.push(chars[i]);
+                i += 1;
+            }
+            if i < len { i += 1; } // skip >
+
+            match tag_name.as_str() {
+                // Paragraph start
+                "w:p" if !is_closing => {
+                    in_paragraph = true;
+                    paragraph_text.clear();
+                    is_heading = false;
+                    in_list_item = false;
+                }
+                // Paragraph end — flush
+                "w:p" if is_closing => {
+                    let text = paragraph_text.trim().to_string();
+                    if !text.is_empty() {
+                        if in_table && in_cell {
+                            table_cell_text = text;
+                        } else if is_heading {
+                            let prefix = "#".repeat(heading_level as usize);
+                            result.push_str(&format!("{} {}\n\n", prefix, text));
+                        } else if in_list_item {
+                            result.push_str(&format!("- {}\n", text));
+                        } else {
+                            result.push_str(&text);
+                            result.push_str("\n\n");
+                        }
+                    }
+                    in_paragraph = false;
+                    paragraph_text.clear();
+                }
+                // Heading style detection
+                "w:pStyle" if !is_closing => {
+                    if tag_content.contains("Heading") || tag_content.contains("heading") {
+                        is_heading = true;
+                        // Try to extract heading level from val="Heading1" etc.
+                        if let Some(pos) = tag_content.find("Heading") {
+                            let after = &tag_content[pos + 7..];
+                            if let Some(ch) = after.chars().next() {
+                                if ch.is_ascii_digit() {
+                                    heading_level = ch.to_digit(10).unwrap_or(1) as u8;
+                                }
+                            }
+                        }
+                    }
+                    if tag_content.contains("ListParagraph") || tag_content.contains("listParagraph") {
+                        in_list_item = true;
+                    }
+                }
+                // Bold
+                "w:b" if !is_closing && !tag_content.contains("w:val=\"0\"") && !tag_content.contains("w:val=\"false\"") => {
+                    is_bold = true;
+                }
+                // Italic
+                "w:i" if !is_closing && !tag_content.contains("w:val=\"0\"") && !tag_content.contains("w:val=\"false\"") => {
+                    is_italic = true;
+                }
+                // Run end — apply formatting
+                "w:r" if is_closing => {
+                    is_bold = false;
+                    is_italic = false;
+                }
+                // Text content
+                "w:t" if !is_closing => {
+                    // Read text until </w:t>
+                    let mut text = String::new();
+                    while i < len {
+                        if chars[i] == '<' {
+                            break;
+                        }
+                        text.push(chars[i]);
+                        i += 1;
+                    }
+                    let decoded = decode_xml_entities(&text);
+                    if is_bold && is_italic {
+                        paragraph_text.push_str(&format!("***{}***", decoded));
+                    } else if is_bold {
+                        paragraph_text.push_str(&format!("**{}**", decoded));
+                    } else if is_italic {
+                        paragraph_text.push_str(&format!("*{}*", decoded));
+                    } else {
+                        paragraph_text.push_str(&decoded);
+                    }
+                }
+                // Table handling
+                "w:tbl" if !is_closing => {
+                    in_table = true;
+                    is_first_table_row = true;
+                }
+                "w:tbl" if is_closing => {
+                    in_table = false;
+                    result.push('\n');
+                }
+                "w:tr" if !is_closing => {
+                    table_row.clear();
+                }
+                "w:tr" if is_closing => {
+                    if !table_row.is_empty() {
+                        result.push_str("| ");
+                        result.push_str(&table_row.join(" | "));
+                        result.push_str(" |\n");
+                        if is_first_table_row {
+                            result.push_str("|");
+                            for _ in &table_row {
+                                result.push_str(" --- |");
+                            }
+                            result.push('\n');
+                            is_first_table_row = false;
+                        }
+                    }
+                }
+                "w:tc" if !is_closing => {
+                    in_cell = true;
+                    table_cell_text.clear();
+                }
+                "w:tc" if is_closing => {
+                    table_row.push(table_cell_text.trim().to_string());
+                    in_cell = false;
+                    table_cell_text.clear();
+                }
+                _ => {}
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    if result.trim().is_empty() {
+        Ok("[Could not extract structured text from DOCX]".to_string())
+    } else {
+        Ok(result)
+    }
+}
+
+/// Extract PPTX to Markdown with slide numbers and structure.
+fn extract_pptx_markdown(archive: &mut zip::ZipArchive<fs::File>) -> Result<String, String> {
+    let mut slide_names: Vec<String> = (0..archive.len())
+        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
+        .collect();
+
+    // Sort by slide number
+    slide_names.sort_by(|a, b| {
+        let num_a = a.trim_start_matches("ppt/slides/slide").trim_end_matches(".xml").parse::<u32>().unwrap_or(0);
+        let num_b = b.trim_start_matches("ppt/slides/slide").trim_end_matches(".xml").parse::<u32>().unwrap_or(0);
+        num_a.cmp(&num_b)
+    });
+
+    let mut result = String::new();
+
+    for (idx, slide_name) in slide_names.iter().enumerate() {
+        let xml = match read_zip_file(archive, slide_name) {
+            Some(x) => x,
+            None => continue,
         };
 
-        let mut xml_content = String::new();
-        file.read_to_string(&mut xml_content)
-            .map_err(|e| format!("Failed to read XML '{}': {}", xml_path, e))?;
+        result.push_str(&format!("## Slide {}\n\n", idx + 1));
 
-        // Strip XML tags, keep text content
-        let text = strip_xml_tags(&xml_content);
-        let cleaned = text
-            .lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
+        // Extract text from <a:t> tags, group by <a:p> paragraphs
+        let mut paragraphs: Vec<String> = Vec::new();
+        let mut current_para = String::new();
 
-        if !cleaned.is_empty() {
-            all_text.push(cleaned);
+        let mut i = 0;
+        let chars: Vec<char> = xml.chars().collect();
+        let len = chars.len();
+
+        while i < len {
+            if i + 4 < len && &xml[i..i+4] == "<a:p" {
+                current_para.clear();
+                // skip to end of tag
+                while i < len && chars[i] != '>' { i += 1; }
+                i += 1;
+            } else if i + 5 <= len && &xml[i..i+5] == "</a:p" {
+                let text = current_para.trim().to_string();
+                if !text.is_empty() {
+                    paragraphs.push(text);
+                }
+                current_para.clear();
+                while i < len && chars[i] != '>' { i += 1; }
+                i += 1;
+            } else if i + 4 < len && &xml[i..i+4] == "<a:t" {
+                // skip to end of opening tag
+                while i < len && chars[i] != '>' { i += 1; }
+                i += 1;
+                // read text
+                let mut text = String::new();
+                while i < len && chars[i] != '<' {
+                    text.push(chars[i]);
+                    i += 1;
+                }
+                current_para.push_str(&decode_xml_entities(&text));
+            } else {
+                i += 1;
+            }
         }
+
+        // First paragraph is usually the slide title
+        if let Some(title) = paragraphs.first() {
+            result.push_str(&format!("**{}**\n\n", title));
+            for para in paragraphs.iter().skip(1) {
+                result.push_str(&format!("- {}\n", para));
+            }
+        }
+        result.push('\n');
     }
 
-    if all_text.is_empty() {
-        let fname = paths.first().map(|s| s.as_str()).unwrap_or("unknown");
-        Ok(format!("[Could not extract text from this file (tried {})]", fname))
+    if result.trim().is_empty() {
+        Ok("[Could not extract text from PPTX]".to_string())
     } else {
-        Ok(all_text.join("\n\n"))
+        Ok(result)
     }
 }
 
-/// Simple XML tag stripper — removes all tags and decodes basic entities.
-fn strip_xml_tags(xml: &str) -> String {
-    let mut result = String::with_capacity(xml.len());
+/// Extract XLSX to Markdown tables.
+fn extract_xlsx_markdown(archive: &mut zip::ZipArchive<fs::File>) -> Result<String, String> {
+    // Read shared strings first
+    let shared_strings: Vec<String> = match read_zip_file(archive, "xl/sharedStrings.xml") {
+        Some(xml) => {
+            let mut strings = Vec::new();
+            let mut in_t = false;
+            let mut current = String::new();
+            for ch in xml.chars() {
+                if in_t {
+                    if ch == '<' {
+                        strings.push(decode_xml_entities(&current));
+                        current.clear();
+                        in_t = false;
+                    } else {
+                        current.push(ch);
+                    }
+                }
+                // Detect <t> or <t ...>
+                if !in_t && xml[strings.len()..].contains("<t") {
+                    // simplified: just look for <t> tags
+                }
+            }
+            // Better approach: regex-like extraction
+            let mut result_strings = Vec::new();
+            let parts: Vec<&str> = xml.split("<t").collect();
+            for part in parts.iter().skip(1) {
+                if let Some(end) = part.find("</t>") {
+                    let text_part = if let Some(start) = part.find('>') {
+                        &part[start + 1..end]
+                    } else {
+                        &part[..end]
+                    };
+                    result_strings.push(decode_xml_entities(text_part));
+                }
+            }
+            result_strings
+        }
+        None => Vec::new(),
+    };
+
+    // Read sheet1
+    let sheet_xml = read_zip_file(archive, "xl/worksheets/sheet1.xml")
+        .ok_or_else(|| "No sheet1.xml found".to_string())?;
+
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut current_row: Vec<String> = Vec::new();
+    let mut cell_type = String::new();
+    let mut cell_value = String::new();
+    let mut in_row = false;
+    let mut in_cell = false;
+    let mut in_value = false;
+
+    let parts: Vec<&str> = sheet_xml.split('<').collect();
+    for part in parts {
+        if part.starts_with("row ") || part.starts_with("row>") {
+            in_row = true;
+            current_row.clear();
+        } else if part.starts_with("/row>") {
+            if !current_row.is_empty() {
+                rows.push(current_row.clone());
+            }
+            in_row = false;
+        } else if in_row && (part.starts_with("c ") || part.starts_with("c>")) {
+            in_cell = true;
+            cell_type.clear();
+            cell_value.clear();
+            if part.contains("t=\"s\"") {
+                cell_type = "s".to_string();
+            }
+        } else if part.starts_with("/c>") {
+            if cell_type == "s" {
+                if let Ok(idx) = cell_value.trim().parse::<usize>() {
+                    current_row.push(shared_strings.get(idx).cloned().unwrap_or_default());
+                } else {
+                    current_row.push(cell_value.trim().to_string());
+                }
+            } else {
+                current_row.push(cell_value.trim().to_string());
+            }
+            in_cell = false;
+        } else if in_cell && part.starts_with("v>") {
+            in_value = true;
+            cell_value.clear();
+        } else if in_cell && part.starts_with("v ") {
+            // <v> with attributes
+            if let Some(pos) = part.find('>') {
+                cell_value = part[pos + 1..].trim_end_matches('/').to_string();
+            }
+        } else if part.starts_with("/v>") {
+            in_value = false;
+        } else if in_value {
+            // text content between tags
+            if let Some(pos) = part.find('>') {
+                cell_value.push_str(&part[pos + 1..]);
+            }
+        }
+    }
+
+    if rows.is_empty() {
+        return Ok("[Could not extract data from XLSX]".to_string());
+    }
+
+    // Convert to Markdown table
+    let mut result = String::new();
+    let max_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+
+    for (i, row) in rows.iter().enumerate() {
+        let mut padded = row.clone();
+        padded.resize(max_cols, String::new());
+        result.push_str("| ");
+        result.push_str(&padded.join(" | "));
+        result.push_str(" |\n");
+
+        // Header separator after first row
+        if i == 0 {
+            result.push('|');
+            for _ in 0..max_cols {
+                result.push_str(" --- |");
+            }
+            result.push('\n');
+        }
+    }
+
+    Ok(result)
+}
+
+/// Extract OpenDocument format text (basic).
+fn extract_odf_text(archive: &mut zip::ZipArchive<fs::File>) -> Result<String, String> {
+    let xml = read_zip_file(archive, "content.xml")
+        .ok_or_else(|| "No content.xml found".to_string())?;
+
+    let mut result = String::new();
     let mut in_tag = false;
 
     for ch in xml.chars() {
@@ -189,7 +543,6 @@ fn strip_xml_tags(xml: &str) -> String {
             '<' => in_tag = true,
             '>' => {
                 in_tag = false;
-                // Add space after closing tags to separate words
                 result.push(' ');
             }
             _ if !in_tag => result.push(ch),
@@ -197,15 +550,14 @@ fn strip_xml_tags(xml: &str) -> String {
         }
     }
 
-    // Decode common XML entities
-    result
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&#10;", "\n")
-        .replace("&#13;", "")
+    let cleaned = decode_xml_entities(&result);
+    let lines: Vec<&str> = cleaned.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+
+    if lines.is_empty() {
+        Ok("[Could not extract text from this file]".to_string())
+    } else {
+        Ok(lines.join("\n\n"))
+    }
 }
 
 #[tauri::command]
