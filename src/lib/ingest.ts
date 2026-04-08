@@ -30,11 +30,12 @@ export async function autoIngest(
     filesWritten: [],
   })
 
-  const [sourceContent, schema, purpose, index] = await Promise.all([
+  const [sourceContent, schema, purpose, index, overview] = await Promise.all([
     tryReadFile(sourcePath),
     tryReadFile(`${projectPath}/schema.md`),
     tryReadFile(`${projectPath}/purpose.md`),
     tryReadFile(`${projectPath}/wiki/index.md`),
+    tryReadFile(`${projectPath}/wiki/overview.md`),
   ])
 
   const truncatedContent = sourceContent.length > 50000
@@ -77,7 +78,7 @@ export async function autoIngest(
   await streamChat(
     llmConfig,
     [
-      { role: "system", content: buildGenerationPrompt(schema, purpose, index, fileName) },
+      { role: "system", content: buildGenerationPrompt(schema, purpose, index, fileName, overview) },
       {
         role: "user",
         content: [
@@ -316,7 +317,7 @@ function buildAnalysisPrompt(purpose: string, index: string): string {
 /**
  * Step 2 prompt: AI takes its own analysis and generates wiki files + review items.
  */
-function buildGenerationPrompt(schema: string, purpose: string, index: string, sourceFileName: string): string {
+function buildGenerationPrompt(schema: string, purpose: string, index: string, sourceFileName: string, overview?: string): string {
   // Use original filename (without extension) as the source summary page name
   const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, "")
 
@@ -343,6 +344,7 @@ function buildGenerationPrompt(schema: string, purpose: string, index: string, s
     "3. Concept pages in wiki/concepts/ for key concepts identified in the analysis",
     "4. An updated wiki/index.md — add new entries to existing categories, preserve all existing entries",
     "5. A log entry for wiki/log.md (just the new entry to append, format: ## [YYYY-MM-DD] ingest | Title)",
+    "6. An updated wiki/overview.md — a high-level summary of what the entire wiki covers, updated to reflect the newly ingested source. This should be a comprehensive 2-5 paragraph overview of ALL topics in the wiki, not just the new source.",
     "",
     "## Frontmatter Rules (CRITICAL)",
     "",
@@ -395,6 +397,7 @@ function buildGenerationPrompt(schema: string, purpose: string, index: string, s
     purpose ? `## Wiki Purpose\n${purpose}` : "",
     schema ? `## Wiki Schema\n${schema}` : "",
     index ? `## Current Wiki Index (preserve all existing entries, add new ones)\n${index}` : "",
+    overview ? `## Current Overview (update this to reflect the new source)\n${overview}` : "",
   ].filter(Boolean).join("\n")
 }
 
