@@ -255,11 +255,31 @@ function CitedReferencesPanel({ content }: { content: string }) {
             <button
               key={page.path}
               type="button"
-              onClick={() => {
-                if (project) {
-                  const fullPath = page.path.startsWith("/") ? page.path : `${project.path}/${page.path}`
-                  setSelectedFile(fullPath)
+              onClick={async () => {
+                if (!project) return
+                // Try the given path first, then search all wiki subdirectories
+                const id = page.path.replace(/^wiki\//, "").replace(/\.md$/, "").split("/").pop() ?? ""
+                const candidates = [
+                  `${project.path}/${page.path}`,
+                  `${project.path}/wiki/entities/${id}.md`,
+                  `${project.path}/wiki/concepts/${id}.md`,
+                  `${project.path}/wiki/sources/${id}.md`,
+                  `${project.path}/wiki/queries/${id}.md`,
+                  `${project.path}/wiki/synthesis/${id}.md`,
+                  `${project.path}/wiki/comparisons/${id}.md`,
+                  `${project.path}/wiki/${id}.md`,
+                ]
+                for (const candidate of candidates) {
+                  try {
+                    await readFile(candidate)
+                    setSelectedFile(candidate)
+                    return
+                  } catch {
+                    // try next
+                  }
                 }
+                // Last resort: set the original path anyway
+                setSelectedFile(`${project.path}/${page.path}`)
               }}
               className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-accent/50 transition-colors"
               title={page.path}
@@ -314,19 +334,40 @@ function extractCitedPages(text: string): CitedPage[] {
   }
 
   // Fallback for persisted messages: extract [[wikilinks]] from the text
+  // Try to resolve each wikilink to a real file path by checking common wiki subdirectories
   const wikilinks = text.match(/\[\[([^\]|]+?)(?:\|[^\]]+?)?\]\]/g)
   if (wikilinks) {
     const seen = new Set<string>()
     const pages: CitedPage[] = []
+    const WIKI_DIRS = ["entities", "concepts", "sources", "queries", "synthesis", "comparisons"]
+
     for (const link of wikilinks) {
       const nameMatch = link.match(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/)
       if (nameMatch) {
         const id = nameMatch[1].trim()
         const display = nameMatch[2]?.trim() || id
-        if (!seen.has(id)) {
-          seen.add(id)
-          pages.push({ title: display, path: `wiki/${id}.md` })
+
+        // Skip if id contains path separators (already a path like queries/xxx)
+        if (seen.has(id)) continue
+        seen.add(id)
+
+        // Try to find the file in known wiki subdirectories
+        let resolvedPath = ""
+        if (id.includes("/")) {
+          // Already has directory like "queries/my-query"
+          resolvedPath = `wiki/${id}.md`
+        } else {
+          // Search in common directories
+          for (const dir of WIKI_DIRS) {
+            resolvedPath = `wiki/${dir}/${id}.md`
+            // We can't do async file checking here, so try all known patterns
+            // The click handler will try multiple paths
+            break // Use first candidate, click handler resolves the rest
+          }
+          if (!resolvedPath) resolvedPath = `wiki/${id}.md`
         }
+
+        pages.push({ title: display, path: resolvedPath })
       }
     }
     if (pages.length > 0) return pages
