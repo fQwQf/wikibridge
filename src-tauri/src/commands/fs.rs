@@ -758,33 +758,62 @@ pub fn find_related_wiki_pages(project_path: String, source_name: String) -> Res
 
 fn collect_related_pages(dir: &Path, source_name: &str, results: &mut Vec<String>) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
-    // derive a slug from source filename for matching (e.g., "my-article.pdf" → "my-article")
-    let slug = source_name
+
+    // Get just the filename without path
+    let file_name = source_name
         .rsplit('/')
         .next()
-        .unwrap_or(source_name)
+        .unwrap_or(source_name);
+    let file_name_lower = file_name.to_lowercase();
+
+    // Derive stem (filename without extension) for source summary matching
+    let file_stem = file_name
         .rsplit('.')
-        .last()
-        .unwrap_or(source_name)
-        .to_lowercase();
+        .skip(1)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join(".");
+    let file_stem_lower = if file_stem.is_empty() { file_name_lower.clone() } else { file_stem.to_lowercase() };
 
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             collect_related_pages(&path, source_name, results)?;
         } else if path.extension().map(|e| e == "md").unwrap_or(false) {
-            // Skip index.md and log.md — they'll be updated separately
             let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            // Skip index.md, log.md, overview.md — updated separately
             if fname == "index.md" || fname == "log.md" || fname == "overview.md" {
                 continue;
             }
 
             if let Ok(content) = fs::read_to_string(&path) {
                 let content_lower = content.to_lowercase();
-                // Match if the page references the source file name or its slug
-                if content_lower.contains(&source_name.to_lowercase())
-                    || content_lower.contains(&slug)
-                {
+
+                // Match 1: frontmatter sources field contains the exact filename
+                // e.g., sources: ["2603.25723v1.pdf"]
+                let sources_match = content_lower.contains(&format!("\"{}\"", file_name_lower))
+                    || content_lower.contains(&format!("'{}'", file_name_lower));
+
+                // Match 2: source summary page (wiki/sources/{stem}.md)
+                let is_source_summary = path.to_string_lossy().contains("/sources/")
+                    && fname.to_lowercase().starts_with(&file_stem_lower);
+
+                // Match 3: page was generated from this source (check frontmatter sources field)
+                let frontmatter_match = if let Some(fm_start) = content.find("---\n") {
+                    if let Some(fm_end) = content[fm_start + 4..].find("\n---") {
+                        let frontmatter = &content[fm_start..fm_start + 4 + fm_end].to_lowercase();
+                        frontmatter.contains("sources:")
+                            && frontmatter.contains(&file_name_lower)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if sources_match || is_source_summary || frontmatter_match {
                     results.push(path.to_string_lossy().to_string());
                 }
             }

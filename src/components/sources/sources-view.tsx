@@ -130,13 +130,24 @@ export function SourcesView() {
     if (!confirmed) return
 
     try {
-      // Find related wiki pages before deleting
+      // Step 1: Find related wiki pages before deleting
       const relatedPages = await findRelatedWikiPages(project.path, fileName)
+      const deletedSlugs = relatedPages.map((p) => {
+        const name = p.split("/").pop()?.replace(".md", "") ?? ""
+        return name
+      }).filter(Boolean)
 
-      // Delete the source file
+      // Step 2: Delete the source file
       await deleteFile(node.path)
 
-      // Delete related wiki pages
+      // Step 3: Delete preprocessed cache
+      try {
+        await deleteFile(`${project.path}/raw/sources/.cache/${fileName}.txt`)
+      } catch {
+        // cache file may not exist
+      }
+
+      // Step 4: Delete related wiki pages
       for (const pagePath of relatedPages) {
         try {
           await deleteFile(pagePath)
@@ -145,26 +156,55 @@ export function SourcesView() {
         }
       }
 
-      // Remove entries from index.md that reference deleted pages
-      if (relatedPages.length > 0) {
-        try {
-          const indexPath = `${project.path}/wiki/index.md`
-          const indexContent = await readFile(indexPath)
-          const deletedSlugs = relatedPages.map((p) => {
-            const name = p.split("/").pop()?.replace(".md", "") ?? ""
-            return name
-          })
-          const updatedIndex = indexContent
-            .split("\n")
-            .filter((line) => !deletedSlugs.some((slug) => slug && line.toLowerCase().includes(slug)))
-            .join("\n")
-          await writeFile(indexPath, updatedIndex)
-        } catch {
-          // index update failure is non-critical
-        }
+      // Step 5: Clean index.md — remove entries referencing deleted pages
+      try {
+        const indexPath = `${project.path}/wiki/index.md`
+        const indexContent = await readFile(indexPath)
+        const updatedIndex = indexContent
+          .split("\n")
+          .filter((line) => !deletedSlugs.some((slug) => line.toLowerCase().includes(slug.toLowerCase())))
+          .join("\n")
+        await writeFile(indexPath, updatedIndex)
+      } catch {
+        // non-critical
       }
 
-      // Refresh
+      // Step 6: Clean [[wikilinks]] to deleted pages from remaining wiki files
+      try {
+        const wikiTree = await listDirectory(`${project.path}/wiki`)
+        const allMdFiles = flattenMdFiles(wikiTree)
+        for (const file of allMdFiles) {
+          try {
+            const content = await readFile(file.path)
+            let updated = content
+            for (const slug of deletedSlugs) {
+              // Replace [[slug]] and [[slug|display text]] with just the display text
+              const linkRegex = new RegExp(`\\[\\[${slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\|([^\\]]+))?\\]\\]`, "gi")
+              updated = updated.replace(linkRegex, (_match, displayText) => displayText || slug)
+            }
+            if (updated !== content) {
+              await writeFile(file.path, updated)
+            }
+          } catch {
+            // skip unreadable files
+          }
+        }
+      } catch {
+        // non-critical
+      }
+
+      // Step 7: Append deletion record to log.md
+      try {
+        const logPath = `${project.path}/wiki/log.md`
+        const logContent = await readFile(logPath).catch(() => "# Wiki Log\n")
+        const date = new Date().toISOString().slice(0, 10)
+        const logEntry = `\n## [${date}] delete | ${fileName}\n\nDeleted source file and ${relatedPages.length} related wiki pages.\n`
+        await writeFile(logPath, logContent.trimEnd() + logEntry)
+      } catch {
+        // non-critical
+      }
+
+      // Step 8: Refresh everything
       await loadSources()
       const tree = await listDirectory(project.path)
       setFileTree(tree)
@@ -314,6 +354,18 @@ function flattenFiles(nodes: FileNode[]): FileNode[] {
     if (node.is_dir && node.children) {
       files.push(...flattenFiles(node.children))
     } else if (!node.is_dir) {
+      files.push(node)
+    }
+  }
+  return files
+}
+
+function flattenMdFiles(nodes: FileNode[]): FileNode[] {
+  const files: FileNode[] = []
+  for (const node of nodes) {
+    if (node.is_dir && node.children) {
+      files.push(...flattenMdFiles(node.children))
+    } else if (!node.is_dir && node.name.endsWith(".md")) {
       files.push(node)
     }
   }
