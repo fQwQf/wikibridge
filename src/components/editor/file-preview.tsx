@@ -1,4 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core"
+import { convertLatexToUnicode } from "@/lib/latex-to-unicode"
 import {
   FileText,
   Image as ImageIcon,
@@ -111,7 +112,7 @@ function TextPreview({ filePath, content, label }: { filePath: string; content: 
         <span>{filePath}</span>
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase">{label}</span>
       </div>
-      <pre className="whitespace-pre-wrap font-mono text-sm">{content}</pre>
+      <pre className="whitespace-pre-wrap font-mono text-sm">{convertLatexToUnicode(content)}</pre>
     </div>
   )
 }

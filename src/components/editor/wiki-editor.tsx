@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { Editor, rootCtx, defaultValueCtx } from "@milkdown/kit/core"
 import { commonmark } from "@milkdown/kit/preset/commonmark"
 import { gfm } from "@milkdown/kit/preset/gfm"
@@ -6,6 +7,7 @@ import { listener, listenerCtx } from "@milkdown/kit/plugin/listener"
 import { nord } from "@milkdown/theme-nord"
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react"
 import "@milkdown/theme-nord/style.css"
+import { convertLatexToUnicode } from "@/lib/latex-to-unicode"
 
 interface WikiEditorInnerProps {
   content: string
@@ -40,10 +42,12 @@ interface WikiEditorProps {
 }
 
 export function WikiEditor({ content, onSave }: WikiEditorProps) {
+  const processedContent = useMemo(() => convertLatexToUnicode(content), [content])
+
   return (
     <MilkdownProvider>
       <div className="prose prose-invert min-w-0 max-w-none overflow-hidden p-6">
-        <WikiEditorInner content={content} onSave={onSave} />
+        <WikiEditorInner content={processedContent} onSave={onSave} />
       </div>
     </MilkdownProvider>
   )
