@@ -27,17 +27,44 @@ export async function streamChat(
   const { onToken, onDone, onError } = callbacks
   const providerConfig = getProviderConfig(config)
 
+  // Create a combined signal: user abort OR 5-minute timeout
+  const timeoutMs = 5 * 60 * 1000 // 5 minutes for initial response
+  let combinedSignal = signal
+  let timeoutController: AbortController | undefined
+
+  if (typeof AbortSignal.timeout === "function") {
+    // Combine user signal with timeout
+    timeoutController = new AbortController()
+    const timeoutId = setTimeout(() => timeoutController?.abort(), timeoutMs)
+
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        clearTimeout(timeoutId)
+        timeoutController?.abort()
+      })
+    }
+    combinedSignal = timeoutController.signal
+  }
+
   let response: Response
   try {
     response = await fetch(providerConfig.url, {
       method: "POST",
       headers: providerConfig.headers,
       body: JSON.stringify(providerConfig.buildBody(messages)),
-      signal,
+      signal: combinedSignal,
+      // @ts-ignore — keepalive hint for Tauri webview
+      keepalive: false,
     })
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      onDone()
+    if (err instanceof Error && (err.name === "AbortError" || err.message === "Load failed")) {
+      // Check if it was user-initiated abort
+      if (signal?.aborted) {
+        onDone()
+        return
+      }
+      // Otherwise it's a timeout or network error
+      onError(new Error("Request timed out or network error. The model may need more time — try again or use a faster model."))
       return
     }
     onError(err instanceof Error ? err : new Error(String(err)))
@@ -89,8 +116,13 @@ export async function streamChat(
 
     onDone()
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
+    if (err instanceof Error && (err.name === "AbortError" || (signal?.aborted))) {
       onDone()
+      return
+    }
+    if (err instanceof Error && err.message === "Load failed") {
+      // WebKit network error during streaming — connection dropped
+      onError(new Error("Connection lost during streaming. Try again."))
       return
     }
     onError(err instanceof Error ? err : new Error(String(err)))
