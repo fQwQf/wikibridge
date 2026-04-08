@@ -17,6 +17,10 @@
   <a href="#license">License</a>
 </p>
 
+<p align="center">
+  English | <a href="README_CN.md">中文</a>
+</p>
+
 ---
 
 ## What is this?
@@ -44,120 +48,206 @@ The core architecture follows Karpathy's design faithfully:
 
 ## What We Changed & Added
 
-### Architecture Enhancements
+### 1. From CLI to Desktop Application
 
-| Original (Karpathy) | Our Implementation |
-|---------------------|-------------------|
-| CLI-based workflow (copy-paste to LLM agent) | Full desktop app (Tauri v2 + React) |
-| Single LLM conversation | Multi-conversation chat with history |
-| Manual ingest with discussion | Two-step chain-of-thought: LLM analyzes first, then generates |
-| Schema only | Schema + **Purpose.md** (wiki's soul — goals, key questions, scope) |
-| No search engine at small scale | **Tokenized search** with CJK bigram support + graph-enhanced retrieval |
-| index.md as sole navigation | **Knowledge View** (grouped by type) + File Tree + Graph View |
+The original is an abstract pattern document designed to be copy-pasted to an LLM agent. We built it into a **full cross-platform desktop application** with:
+- **Three-column layout**: Knowledge Tree / File Tree (left) + Chat (center) + Preview (right)
+- **Icon sidebar** for switching between Wiki, Sources, Search, Graph, Lint, Review, Deep Research, Settings
+- **Custom resizable panels** — drag-to-resize left and right panels with min/max constraints
+- **Activity panel** — real-time processing status showing file-by-file ingest progress
+- **All state persisted** — conversations, settings, review items, project config survive restarts
+- **Scenario templates** — Research, Reading, Personal Growth, Business, General — each pre-configures purpose.md and schema.md
 
-### Knowledge Graph & Relevance
+### 2. Purpose.md — The Wiki's Soul
 
-The original mentions Obsidian's graph view for browsing. We built a **full knowledge graph system**:
+The original has Schema (how the wiki works) but no formal place for **why** the wiki exists. We added `purpose.md`:
+- Defines goals, key questions, research scope, evolving thesis
+- LLM reads it during every ingest and query for context
+- LLM can suggest updates based on usage patterns
+- Different from schema — schema is structural rules, purpose is directional intent
 
-- **Interactive graph visualization** (sigma.js) with nodes colored by type
-- **4-signal relevance model** for relationship strength:
-  - Direct links (wikilink count) × 3.0
-  - Source overlap (shared source files) × 4.0
-  - Common neighbors (Adamic-Adar) × 1.5
-  - Type affinity (entity↔concept) × 1.0
-- **Edge thickness and color** reflect relationship strength
-- **Graph-enhanced retrieval**: Chat queries expand to related nodes via 1-level graph traversal
-- **Budget-controlled context**: 60% for pages, 20% for history, 5% for index, 15% reserved
+### 3. Two-Step Chain-of-Thought Ingest
 
-### Ingest Pipeline
-
-The original describes a single-step ingest. We use a **two-step chain-of-thought**:
+The original describes a single-step ingest where the LLM reads and writes simultaneously. We split it into **two sequential LLM calls** for significantly better quality:
 
 ```
 Step 1 (Analysis): LLM reads source → structured analysis
   - Key entities, concepts, arguments
-  - Connections to existing wiki
-  - Contradictions & tensions
-  - Recommendations
+  - Connections to existing wiki content
+  - Contradictions & tensions with existing knowledge
+  - Recommendations for wiki structure
 
 Step 2 (Generation): LLM takes analysis → generates wiki files
-  - Source summary, entities, concepts
+  - Source summary with frontmatter (type, title, sources[])
+  - Entity pages, concept pages with cross-references
   - Updated index.md, log.md, overview.md
   - Review items for human judgment
   - Search queries for Deep Research
 ```
 
-### Review System (Async Human-in-the-Loop)
+Additional ingest enhancements beyond the original:
+- **Source traceability** — every generated wiki page includes a `sources: []` field in YAML frontmatter, linking back to the raw source files that contributed to it
+- **overview.md auto-update** — global summary page regenerated on every ingest to reflect the latest state of the wiki
+- **Guaranteed source summary** — fallback ensures a source summary page is always created, even if the LLM omits it
+- **Language-aware generation** — LLM responds in the user's configured language (English or Chinese)
+
+### 4. Knowledge Graph with Relevance Model
+
+The original mentions `[[wikilinks]]` for cross-references but has no graph analysis. We built a **full knowledge graph visualization and relevance engine**:
+
+**4-Signal Relevance Model:**
+| Signal | Weight | Description |
+|--------|--------|-------------|
+| Direct link | ×3.0 | Pages linked via `[[wikilinks]]` |
+| Source overlap | ×4.0 | Pages sharing the same raw source (via frontmatter `sources[]`) |
+| Adamic-Adar | ×1.5 | Pages sharing common neighbors (weighted by neighbor degree) |
+| Type affinity | ×1.0 | Bonus for same page type (entity↔entity, concept↔concept) |
+
+**Graph Visualization (sigma.js + graphology + ForceAtlas2):**
+- Node colors by page type, sizes scaled by link count (√ scaling)
+- Edge thickness and color by relevance weight (green=strong, gray=weak)
+- Hover interaction: neighbors stay visible, non-neighbors dim, edges highlight with relevance score label
+- Zoom controls (ZoomIn, ZoomOut, Fit-to-screen)
+- Position caching prevents layout jumps when data updates
+- Legend showing node counts per type
+
+### 5. Optimized Query Retrieval Pipeline
+
+The original describes a simple query where the LLM reads relevant pages. We built a **4-phase retrieval pipeline** with budget control:
+
+```
+Phase 1: Tokenized Search
+  - English: word splitting + stop word removal
+  - Chinese: CJK bigram tokenization (每个 → [每个, 个…])
+  - Title match bonus (+10 score)
+  - Searches both wiki/ and raw/sources/
+
+Phase 2: Graph Expansion
+  - Top search results used as seed nodes
+  - 4-signal relevance model finds related pages
+  - Discovers connections the keyword search missed
+
+Phase 3: Budget Control
+  - Configurable context window: 4K → 1M tokens
+  - Proportional allocation: 60% wiki pages, 20% chat history, 5% index, 15% system
+  - Pages prioritized by combined search + graph relevance score
+
+Phase 4: Context Assembly
+  - Numbered pages with full content (not just summaries)
+  - System prompt includes: purpose.md, language rules, citation format, index.md
+  - LLM instructed to cite pages by number: [1], [2], etc.
+```
+
+### 6. Multi-Conversation Chat with Persistence
+
+The original has a single query interface. We built **full multi-conversation support**:
+
+- **Independent chat sessions** — create, rename, delete conversations
+- **Conversation sidebar** — quick switching between topics
+- **Per-conversation persistence** — each conversation saved to `.llm-wiki/chats/{id}.json`
+- **Configurable history depth** — limit how many messages are sent as context (default: 10)
+- **Cited references panel** — collapsible section on each response showing which wiki pages were used, grouped by type with icons
+- **Reference persistence** — cited pages stored directly in message data, stable across restarts
+- **Regenerate** — re-generate the last response with one click (removes last assistant + user message pair, re-sends)
+- **Save to Wiki** — archive valuable answers to `wiki/queries/`, then auto-ingest to extract entities/concepts into the knowledge network
+
+### 7. Thinking / Reasoning Display
+
+Not in the original. For LLMs that emit `<think>` blocks (DeepSeek, QwQ, etc.):
+
+- **Streaming thinking** — rolling 5-line display with opacity fade during generation
+- **Collapsed by default** — thinking blocks hidden after completion, click to expand
+- **Visual separation** — thinking content shown in distinct style, separate from the main response
+
+### 8. LaTeX → Unicode Conversion
+
+Not in the original. Handles mathematical notation across all views:
+
+- **100+ symbol mappings** — Greek letters (α, β, γ), operators (∑, ∏, ∫), arrows (→, ←, ↔), relations (≤, ≥, ≠), and more
+- **Inline conversion** — `$\alpha$` → α, `$\sum$` → ∑, rendered in chat, preview, and saved wiki pages
+
+### 9. Review System (Async Human-in-the-Loop)
 
 The original suggests staying involved during ingest. We added an **asynchronous review queue**:
 
 - LLM flags items needing human judgment during ingest
-- Contradictions, duplicates, missing pages, suggestions
-- Pre-made action buttons: Create Page, Deep Research, Skip
+- **Predefined action types**: Create Page, Deep Research, Skip — constrained to prevent LLM hallucination of arbitrary actions
+- **Search queries generated at ingest time** — LLM pre-generates optimized web search queries for each review item
 - User handles reviews at their convenience — doesn't block ingest
 
-### Deep Research
+### 10. Deep Research
 
 Not in the original. When the LLM identifies knowledge gaps:
 
 - **Web search** (Tavily API) finds relevant sources
-- **Multiple search queries** per topic (LLM-generated, optimized for search engines)
-- **LLM synthesizes** findings into a wiki research page
-- **Auto-ingest** the research result to extract entities/concepts
+- **Multiple search queries** per topic — LLM-generated at ingest time, optimized for search engines
+- **LLM synthesizes** findings into a wiki research page with cross-references to existing wiki
+- **Auto-ingest** — research results automatically processed to extract entities/concepts into the wiki
 - **Task queue** with 3 concurrent tasks
-- **Research Panel** shows real-time progress
+- **Research Panel** — dedicated sidebar panel showing real-time progress per task
 
-### Browser Extension (Web Clipper)
+### 11. Browser Extension (Web Clipper)
 
-The original mentions Obsidian Web Clipper. We built a **dedicated Chrome Extension**:
+The original mentions Obsidian Web Clipper. We built a **dedicated Chrome Extension** (Manifest V3):
 
-- **Mozilla Readability.js** for accurate article extraction
-- **Turndown.js** for HTML → Markdown conversion
-- **Project picker** — choose which wiki to clip into
-- **Local HTTP API** (port 19827) — Extension → App communication
-- **Auto-ingest** — clipped content automatically processed into wiki
-- Works even when app is not running (shows content preview)
+- **Mozilla Readability.js** for accurate article extraction (strips ads, nav, sidebars)
+- **Turndown.js** for HTML → Markdown conversion with table support
+- **Project picker** — choose which wiki to clip into (supports multi-project)
+- **Local HTTP API** (port 19827, tiny_http) — Extension ↔ App communication
+- **Auto-ingest** — clipped content automatically triggers the two-step ingest pipeline
+- **Clip watcher** — polls every 3 seconds for new clips, processes automatically
+- **Offline preview** — shows extracted content even when app is not running
 
-### Multi-format Document Support
+### 12. Multi-format Document Support
 
-The original focuses on text/markdown. We support:
+The original focuses on text/markdown. We support structured extraction preserving document semantics:
 
 | Format | Method |
 |--------|--------|
-| PDF | pdf-extract (Rust) |
-| DOCX | docx-rs — headings, bold/italic, lists, tables → Markdown |
-| PPTX | ZIP + XML — slide-by-slide extraction with structure |
-| XLSX/XLS/ODS | calamine — proper cell types, multi-sheet, Markdown tables |
+| PDF | pdf-extract (Rust) with file caching |
+| DOCX | docx-rs — headings, bold/italic, lists, tables → structured Markdown |
+| PPTX | ZIP + XML — slide-by-slide extraction with heading/list structure |
+| XLSX/XLS/ODS | calamine — proper cell types, multi-sheet support, Markdown tables |
 | Images | Native preview (png, jpg, gif, webp, svg, etc.) |
 | Video/Audio | Built-in player |
-| Web clips | Readability.js + Turndown.js → Markdown |
+| Web clips | Readability.js + Turndown.js → clean Markdown |
 
-### Chat Enhancements
+### 13. File Deletion with Cascade Cleanup
 
-| Feature | Details |
-|---------|---------|
-| **Multi-conversation** | Independent chat sessions with history |
-| **Cited references** | Each response shows which wiki pages were used |
-| **Tokenized search** | Chinese bigram + English word splitting for retrieval |
-| **Graph expansion** | Retrieves related pages via knowledge graph |
-| **Budget control** | Configurable context window (4K → 1M), proportional allocation |
-| **Save to Wiki** | Archive valuable answers → auto-ingest into knowledge network |
-| **Regenerate** | Re-generate last response with one click |
-| **Thinking display** | `<think>` blocks shown as collapsible sections |
-| **LaTeX → Unicode** | 100+ symbols converted (→ α ∑ ≤ etc.) |
-| **Markdown tables** | GFM table rendering with borders |
+The original has no deletion mechanism. We added **intelligent cascade deletion**:
 
-### Other Additions
+- Deleting a source file removes its wiki summary page
+- **3-method matching** finds related wiki pages: frontmatter `sources[]` field, source summary page name, frontmatter section references
+- **Shared entity preservation** — entity/concept pages linked to multiple sources only have the deleted source removed from their `sources[]` array, not deleted entirely
+- **Index cleanup** — removed pages are purged from index.md
+- **Wikilink cleanup** — dead `[[wikilinks]]` to deleted pages are removed from remaining wiki pages
 
-- **i18n** — English + Chinese interface
-- **Scenario templates** — Research, Reading, Personal Growth, Business, General
-- **Settings persistence** — LLM provider, context size, language saved across restarts
-- **Chat persistence** — Conversations saved per-project, survive restarts
-- **Activity panel** — Real-time ingest progress with file-by-file details
-- **Obsidian config** — Auto-generated `.obsidian/` with recommended settings
-- **File deletion cascade** — Deleting a source cleanly removes related wiki pages, updates index, cleans wikilinks
-- **Cross-platform** — macOS, Windows, Linux (path normalization throughout)
-- **GitHub Actions CI/CD** — Automated builds for all platforms
+### 14. Configurable Context Window
+
+Not in the original. Users can configure how much context the LLM receives:
+
+- **Slider from 4K to 1M tokens** — adapts to different LLM capabilities
+- **Proportional budget allocation** — larger windows get proportionally more wiki content
+- **60/20/5/15 split** — wiki pages / chat history / index / system prompt
+
+### 15. Cross-Platform Compatibility
+
+The original is platform-agnostic (abstract pattern). We handle concrete cross-platform concerns:
+
+- **Path normalization** — unified `normalizePath()` used across 22+ files, backslash → forward slash
+- **Unicode-safe string handling** — char-based slicing instead of byte-based (prevents crashes on CJK filenames)
+- **Tauri v2** — native desktop on macOS, Windows, Linux
+- **GitHub Actions CI/CD** — automated builds for macOS (ARM + Intel), Windows (.msi), Linux (.deb / .AppImage)
+
+### 16. Other Additions
+
+- **i18n** — English + Chinese interface (react-i18next)
+- **Settings persistence** — LLM provider, API key, model, context size, language saved via Tauri Store
+- **Obsidian config** — auto-generated `.obsidian/` directory with recommended settings
+- **Markdown rendering** — GFM tables with borders, proper code blocks, wikilink processing in chat and preview
+- **Multi-provider LLM support** — OpenAI, Anthropic, Google, Ollama, Custom — each with provider-specific streaming and headers
+- **15-minute timeout** — long ingest operations won't fail prematurely
+- **dataVersion signaling** — graph and UI automatically refresh when wiki content changes
 
 ## Tech Stack
 
