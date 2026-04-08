@@ -157,11 +157,10 @@ async function extractContent() {
       }
 
       extractedContent = result.content;
-      const preview = extractedContent.slice(0, 2000);
-      contentPreview.textContent = preview + (extractedContent.length > 2000 ? "\n\n..." : "");
+      contentPreview.textContent = extractedContent;
 
       if (result.excerpt) {
-        contentPreview.textContent = "📝 " + result.excerpt + "\n\n---\n\n" + preview;
+        contentPreview.textContent = "📝 " + result.excerpt + "\n\n---\n\n" + extractedContent;
       }
 
       clipBtn.disabled = false;
