@@ -294,11 +294,6 @@ export function ChatPanel() {
             "- At the VERY END of your response, add a hidden comment listing which page numbers you used:",
             "  <!-- cited: 1, 3, 5 -->",
             "",
-            "## Save Judgment",
-            "- If your answer contains a valuable synthesis, comparison, analysis, or new insight worth preserving, add BEFORE the cited comment:",
-            "  <!-- save-worthy: yes | Brief reason -->",
-            "- Only for genuinely valuable answers. NOT for simple lookups.",
-            "",
             "Use markdown formatting for clarity.",
             "",
             purpose ? `## Wiki Purpose\n${purpose}` : "",
@@ -336,7 +331,7 @@ export function ChatPanel() {
           onDone: () => {
             finalizeStream(accumulated, queryRefs)
             abortRef.current = null
-            checkSaveWorthy(accumulated, text)
+            // save-worthy detection removed — user has direct "Save to Wiki" button on each message
           },
           onError: (err) => {
             finalizeStream(`Error: ${err.message}`, undefined)
