@@ -234,11 +234,7 @@ fn handle_clip(body: &str) -> String {
         .collect::<Vec<_>>()
         .join("-")
         .to_lowercase();
-    let slug = if slug_raw.len() > 50 {
-        &slug_raw[..50]
-    } else {
-        &slug_raw
-    };
+    let slug: String = slug_raw.chars().take(50).collect();
 
     let base_name = format!("{}-{}", slug, date_compact);
     let dir = format!("{}/raw/sources", project_path);
