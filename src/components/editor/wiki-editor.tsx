@@ -44,8 +44,15 @@ interface WikiEditorProps {
   onSave: (markdown: string) => void
 }
 
+function wrapBareMathBlocks(text: string): string {
+  return text.replace(
+    /(?<!\$\$\s*)(\\begin\{[^}]+\}[\s\S]*?\\end\{[^}]+\})(?!\s*\$\$)/g,
+    (_match, block: string) => `$$\n${block}\n$$`,
+  )
+}
+
 export function WikiEditor({ content, onSave }: WikiEditorProps) {
-  const processedContent = useMemo(() => convertLatexToUnicode(content), [content])
+  const processedContent = useMemo(() => wrapBareMathBlocks(content), [content])
 
   return (
     <MilkdownProvider>

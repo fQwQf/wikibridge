@@ -585,8 +585,21 @@ function ThinkingBlock({ content }: { content: string }) {
 function processContent(text: string): string {
   let result = text
 
-  // Clean up LaTeX notation → readable Unicode
-  result = convertLatexToUnicode(result)
+  // Wrap bare \begin{...}...\end{...} blocks with $$ for remark-math
+  result = result.replace(
+    /(?<!\$\$\s*)(\\begin\{[^}]+\}[\s\S]*?\\end\{[^}]+\})(?!\s*\$\$)/g,
+    (_match, block: string) => `$$\n${block}\n$$`,
+  )
+
+  // Only apply Unicode conversion to text outside of math delimiters
+  // Split on $$...$$ and $...$ blocks, only convert non-math parts
+  const parts = result.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/g)
+  result = parts
+    .map((part) => {
+      if (part.startsWith("$")) return part // preserve math
+      return convertLatexToUnicode(part)
+    })
+    .join("")
 
   // Fix malformed wikilinks like [[name] (missing closing bracket)
   result = result.replace(/\[\[([^\]]+)\](?!\])/g, "[[$1]]")
