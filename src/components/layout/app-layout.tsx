@@ -39,12 +39,6 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
     loadFileTree()
   }, [loadFileTree])
 
-  // Use refs to track latest widths so drag handler always reads fresh values
-  const leftWidthRef = useRef(leftWidth)
-  const rightWidthRef = useRef(rightWidth)
-  leftWidthRef.current = leftWidth
-  rightWidthRef.current = rightWidth
-
   const startDrag = useCallback(
     (side: "left" | "right") => (e: React.MouseEvent) => {
       e.preventDefault()
@@ -55,20 +49,17 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
 
       const handleMouseMove = (e: MouseEvent) => {
         if (!containerRef.current) return
-        const totalWidth = containerRef.current.getBoundingClientRect().width
-        const minCenter = 300
-        // Account for drag handles (6px each, up to 2 when right panel open)
-        const handles = 12
+        const rect = containerRef.current.getBoundingClientRect()
 
         if (isDraggingLeft.current) {
-          const newWidth = e.clientX - containerRef.current.getBoundingClientRect().left
-          const maxLeft = totalWidth - rightWidthRef.current - minCenter - handles
-          setLeftWidth(Math.max(150, Math.min(maxLeft, newWidth)))
+          const newWidth = e.clientX - rect.left
+          // Hard cap: 150 to 400px
+          setLeftWidth(Math.max(150, Math.min(400, newWidth)))
         }
         if (isDraggingRight.current) {
-          const newWidth = containerRef.current.getBoundingClientRect().right - e.clientX
-          const maxRight = totalWidth - leftWidthRef.current - minCenter - handles
-          setRightWidth(Math.max(250, Math.min(maxRight, newWidth)))
+          const newWidth = rect.right - e.clientX
+          // Hard cap: 250 to 50% of container
+          setRightWidth(Math.max(250, Math.min(rect.width * 0.5, newWidth)))
         }
       }
 
@@ -87,17 +78,7 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
     []
   )
 
-  // Clamp widths at render time to guarantee they never overflow the container
   const hasRightPanel = !!(selectedFile || researchPanelOpen)
-  const handleWidth = 6
-  const totalHandles = hasRightPanel ? handleWidth * 2 : handleWidth
-  const minCenter = 300
-
-  const safeLeftWidth = Math.max(150, Math.min(leftWidth, 500))
-  const maxRight = hasRightPanel
-    ? Math.max(250, (containerRef.current?.getBoundingClientRect().width ?? 1200) - safeLeftWidth - minCenter - totalHandles)
-    : 0
-  const safeRightWidth = hasRightPanel ? Math.max(250, Math.min(rightWidth, maxRight)) : 0
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -106,7 +87,7 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
         {/* Left: File tree + Activity */}
         <div
           className="flex shrink-0 flex-col overflow-hidden border-r"
-          style={{ width: safeLeftWidth }}
+          style={{ width: leftWidth }}
         >
           <div className="flex-1 overflow-hidden">
             <SidebarPanel />
@@ -132,7 +113,7 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
             />
             <div
               className="flex shrink-0 flex-col overflow-hidden border-l"
-              style={{ width: safeRightWidth }}
+              style={{ width: rightWidth }}
             >
               {/* File preview on top (if file selected) */}
               {selectedFile && (
