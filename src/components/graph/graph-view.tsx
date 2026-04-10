@@ -313,6 +313,7 @@ export function GraphView() {
   const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set())
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(new Set())
   const [sigmaKey, setSigmaKey] = useState(0)
+  const [isResizing, setIsResizing] = useState(false)
   const graphContainerRef = useRef<HTMLDivElement>(null)
   // Research confirmation dialog
   const [researchDialog, setResearchDialog] = useState<{
@@ -407,17 +408,24 @@ export function GraphView() {
     setResearchDialog(null)
   }, [researchDialog])
 
-  // Force SigmaContainer remount when graph container resizes (debounced)
-  // This prevents WebGL context loss ("could not find suitable program for node type circle")
+  // Remove sigma during resize, rebuild after resize stops.
+  // Sigma's WebGL context crashes when the canvas is resized mid-render.
   useEffect(() => {
     const el = graphContainerRef.current
     if (!el) return
     let timer: ReturnType<typeof setTimeout>
+    let lastWidth = el.offsetWidth
     const observer = new ResizeObserver(() => {
+      const newWidth = el.offsetWidth
+      if (newWidth === lastWidth) return
+      lastWidth = newWidth
+      // Immediately hide sigma to prevent WebGL crash
+      setIsResizing(true)
       clearTimeout(timer)
       timer = setTimeout(() => {
         setSigmaKey((k) => k + 1)
-      }, 300)
+        setIsResizing(false)
+      }, 200)
     })
     observer.observe(el)
     return () => {
@@ -532,6 +540,11 @@ export function GraphView() {
       <div className="flex flex-1 min-h-0">
         {/* Graph canvas */}
         <div ref={graphContainerRef} className="relative flex-1 min-w-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+          {isResizing ? (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              Resizing...
+            </div>
+          ) : (
           <ErrorBoundary>
           <SigmaContainer
             key={sigmaKey}
@@ -588,6 +601,7 @@ export function GraphView() {
             <ZoomControls />
           </SigmaContainer>
           </ErrorBoundary>
+          )}
 
           {/* Legend */}
           <div className="absolute bottom-3 left-3 rounded-lg border bg-background/90 backdrop-blur-sm px-3 py-2 text-xs shadow-sm max-w-[260px]">
