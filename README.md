@@ -28,6 +28,17 @@
   <img src="assets/overview.jpg" width="100%" alt="Overview">
 </p>
 
+## Features
+
+- **Two-Step Chain-of-Thought Ingest** — LLM analyzes first, then generates wiki pages with source traceability and incremental cache
+- **4-Signal Knowledge Graph** — relevance model with direct links, source overlap, Adamic-Adar, and type affinity
+- **Louvain Community Detection** — automatic knowledge cluster discovery with cohesion scoring
+- **Graph Insights** — surprising connections and knowledge gaps with one-click Deep Research
+- **4-Phase Query Retrieval** — tokenized search → graph expansion → budget control → cited context assembly
+- **Deep Research** — LLM-optimized search topics, multi-query web search, auto-ingest results into wiki
+- **Async Review System** — LLM flags items for human judgment, predefined actions, pre-generated search queries
+- **Chrome Web Clipper** — one-click web page capture with auto-ingest into knowledge base
+
 ## What is this?
 
 LLM Wiki is a cross-platform desktop application that turns your documents into an organized, interlinked knowledge base — automatically. Instead of traditional RAG (retrieve-and-answer from scratch every time), the LLM **incrementally builds and maintains a persistent wiki** from your sources. Knowledge is compiled once and kept current, not re-derived on every query.
