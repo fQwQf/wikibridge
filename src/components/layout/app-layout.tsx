@@ -47,6 +47,7 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
       else isDraggingRight.current = true
       document.body.style.cursor = "col-resize"
       document.body.style.userSelect = "none"
+      document.body.dataset.panelResizing = "true"
 
       const handleMouseMove = (e: MouseEvent) => {
         if (!containerRef.current) return
@@ -69,6 +70,7 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
         isDraggingRight.current = false
         document.body.style.cursor = ""
         document.body.style.userSelect = ""
+        delete document.body.dataset.panelResizing
         document.removeEventListener("mousemove", handleMouseMove)
         document.removeEventListener("mouseup", handleMouseUp)
       }

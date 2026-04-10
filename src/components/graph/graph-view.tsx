@@ -409,9 +409,11 @@ export function GraphView() {
     setResearchDialog(null)
   }, [researchDialog])
 
-  // Pre-emptively unmount sigma BEFORE layout changes that would resize the container.
-  // Sigma's WebGL context crashes when canvas is resized ("could not find suitable program").
-  // We watch the store values that cause right panel to appear/disappear.
+  // Unmount sigma when panels resize or toggle to prevent WebGL crash.
+  // Sigma crashes with "could not find suitable program for node type circle"
+  // when its canvas is resized by external layout changes.
+
+  // 1. Detect panel open/close (selectedFile, researchPanel, insights)
   const selectedFileForLayout = useWikiStore((s) => s.selectedFile)
   const researchPanelForLayout = useResearchStore((s) => s.panelOpen)
   const layoutKey = `${!!selectedFileForLayout}-${researchPanelForLayout}-${showInsights}`
@@ -420,7 +422,6 @@ export function GraphView() {
   useEffect(() => {
     if (prevLayoutKey.current !== layoutKey) {
       prevLayoutKey.current = layoutKey
-      // Layout is about to change — unmount sigma immediately
       setIsResizing(true)
       const timer = setTimeout(() => {
         setSigmaKey((k) => k + 1)
@@ -429,6 +430,25 @@ export function GraphView() {
       return () => clearTimeout(timer)
     }
   }, [layoutKey])
+
+  // 2. Detect panel drag resize via data-panel-resizing attribute on body
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const dragging = document.body.dataset.panelResizing === "true"
+      if (dragging && !isResizing) {
+        setIsResizing(true)
+      }
+      if (!dragging && isResizing) {
+        // Drag ended — remount sigma after a tick
+        setTimeout(() => {
+          setSigmaKey((k) => k + 1)
+          setIsResizing(false)
+        }, 50)
+      }
+    })
+    observer.observe(document.body, { attributes: true, attributeFilter: ["data-panel-resizing"] })
+    return () => observer.disconnect()
+  }, [isResizing])
 
   // Count nodes by type for legend
   const typeCounts = nodes.reduce<Record<string, number>>((acc, n) => {
