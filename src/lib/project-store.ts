@@ -62,6 +62,18 @@ export async function loadSearchApiConfig(): Promise<SearchApiConfig | null> {
   return (await store.get<SearchApiConfig>(SEARCH_API_KEY)) ?? null
 }
 
+const EMBEDDING_KEY = "embeddingConfig"
+
+export async function saveEmbeddingConfig(config: import("@/stores/wiki-store").EmbeddingConfig): Promise<void> {
+  const store = await getStore()
+  await store.set(EMBEDDING_KEY, config)
+}
+
+export async function loadEmbeddingConfig(): Promise<import("@/stores/wiki-store").EmbeddingConfig | null> {
+  const store = await getStore()
+  return (await store.get<import("@/stores/wiki-store").EmbeddingConfig>(EMBEDDING_KEY)) ?? null
+}
+
 export async function removeFromRecentProjects(
   path: string
 ): Promise<void> {

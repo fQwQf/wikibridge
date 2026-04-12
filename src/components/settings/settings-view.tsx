@@ -29,6 +29,8 @@ export function SettingsView() {
   const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
   const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
   const setSearchApiConfig = useWikiStore((s) => s.setSearchApiConfig)
+  const embeddingConfig = useWikiStore((s) => s.embeddingConfig)
+  const setEmbeddingConfig = useWikiStore((s) => s.setEmbeddingConfig)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
 
@@ -40,6 +42,8 @@ export function SettingsView() {
   const [maxContextSize, setMaxContextSize] = useState(llmConfig.maxContextSize ?? 204800)
   const [searchProvider, setSearchProvider] = useState(searchApiConfig.provider)
   const [searchApiKey, setSearchApiKey] = useState(searchApiConfig.apiKey)
+  const [embeddingEnabled, setEmbeddingEnabled] = useState(embeddingConfig.enabled)
+  const [embeddingModel, setEmbeddingModel] = useState(embeddingConfig.model)
   const [saved, setSaved] = useState(false)
   const [currentLang, setCurrentLang] = useState(i18n.language)
 
@@ -59,11 +63,14 @@ export function SettingsView() {
   const currentProvider = PROVIDERS.find((p) => p.value === provider)
 
   async function handleSave() {
-    const { saveLlmConfig, saveSearchApiConfig } = await import("@/lib/project-store")
+    const { saveLlmConfig, saveSearchApiConfig, saveEmbeddingConfig } = await import("@/lib/project-store")
     const newConfig = { provider, apiKey, model, ollamaUrl, customEndpoint, maxContextSize }
     const newSearchConfig = { provider: searchProvider, apiKey: searchApiKey }
+    const newEmbeddingConfig = { enabled: embeddingEnabled, model: embeddingModel }
     setSearchApiConfig(newSearchConfig)
     await saveSearchApiConfig(newSearchConfig)
+    setEmbeddingConfig(newEmbeddingConfig)
+    await saveEmbeddingConfig(newEmbeddingConfig)
     setLlmConfig(newConfig)
     await saveLlmConfig(newConfig)
     setSaved(true)
@@ -260,6 +267,41 @@ export function SettingsView() {
                   onChange={(e) => setSearchApiKey(e.target.value)}
                   placeholder="Enter your Tavily API key (tavily.com)"
                 />
+              </div>
+            )}
+          </div>
+
+          {/* Embedding Search section */}
+          <div className="space-y-4 rounded-lg border p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Vector Search (Embedding)</h3>
+              <button
+                onClick={() => setEmbeddingEnabled(!embeddingEnabled)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  embeddingEnabled ? "bg-primary" : "bg-muted"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                    embeddingEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Enable semantic search using embeddings. Uses the same LLM provider endpoint. Improves search quality for synonym matching and cross-domain discovery.
+            </p>
+            {embeddingEnabled && (
+              <div className="space-y-2">
+                <Label>Embedding Model</Label>
+                <Input
+                  value={embeddingModel}
+                  onChange={(e) => setEmbeddingModel(e.target.value)}
+                  placeholder="e.g. text-embedding-3-small, nomic-embed-text"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The embedding model name supported by your LLM provider.
+                </p>
               </div>
             )}
           </div>

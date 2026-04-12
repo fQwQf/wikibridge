@@ -180,6 +180,29 @@ export async function autoIngest(
     await saveIngestCache(pp, fileName, sourceContent, writtenPaths)
   }
 
+  // ── Step 6: Generate embeddings (if enabled) ───────────────
+  const embCfg = useWikiStore.getState().embeddingConfig
+  if (embCfg.enabled && embCfg.model && writtenPaths.length > 0) {
+    try {
+      const { embedPage } = await import("@/lib/embedding")
+      const llmCfg = useWikiStore.getState().llmConfig
+      for (const wpath of writtenPaths) {
+        const pageId = wpath.split("/").pop()?.replace(/\.md$/, "") ?? ""
+        if (!pageId || ["index", "log", "overview"].includes(pageId)) continue
+        try {
+          const content = await readFile(`${pp}/${wpath}`)
+          const titleMatch = content.match(/^---\n[\s\S]*?^title:\s*["']?(.+?)["']?\s*$/m)
+          const title = titleMatch ? titleMatch[1].trim() : pageId
+          await embedPage(pp, pageId, title, content, llmCfg, embCfg)
+        } catch {
+          // non-critical
+        }
+      }
+    } catch {
+      // embedding module not available
+    }
+  }
+
   const detail = writtenPaths.length > 0
     ? `${writtenPaths.length} files written${reviewItems.length > 0 ? `, ${reviewItems.length} review item(s)` : ""}`
     : "No files generated"
