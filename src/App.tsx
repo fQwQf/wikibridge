@@ -5,7 +5,7 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
 import { useChatStore } from "@/stores/chat-store"
 import { listDirectory, openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig } from "@/lib/project-store"
 import { loadReviewItems, loadChatHistory } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -41,6 +41,10 @@ function App() {
         if (savedSearchConfig) {
           useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
         }
+        const savedEmbeddingConfig = await loadEmbeddingConfig()
+        if (savedEmbeddingConfig) {
+          useWikiStore.getState().setEmbeddingConfig(savedEmbeddingConfig)
+        }
         const savedLang = await loadLanguage()
         if (savedLang) {
           await i18n.changeLanguage(savedLang)
@@ -68,6 +72,13 @@ function App() {
     setSelectedFile(null)
     setActiveView("wiki")
     await saveLastProject(proj)
+
+    // Restore ingest queue (resume interrupted tasks)
+    import("@/lib/ingest-queue").then(({ restoreQueue }) => {
+      restoreQueue(proj.path).catch((err) =>
+        console.error("Failed to restore ingest queue:", err)
+      )
+    })
     // Notify local clip server of the current project + all recent projects
     fetch("http://127.0.0.1:19827/project", {
       method: "POST",

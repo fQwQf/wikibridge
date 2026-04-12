@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Search, FileText } from "lucide-react"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile } from "@/commands/fs"
 import { searchWiki, type SearchResult } from "@/lib/search"
@@ -17,8 +16,7 @@ export function SearchView() {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
+  const [hasSearched, setHasSearched] = useState(false)
   const doSearch = useCallback(
     async (q: string) => {
       if (!project || !q.trim()) {
@@ -26,6 +24,7 @@ export function SearchView() {
         return
       }
       setSearching(true)
+      setHasSearched(true)
       try {
         const found = await searchWiki(normalizePath(project.path), q)
         setResults(found)
@@ -39,14 +38,6 @@ export function SearchView() {
     [project],
   )
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => doSearch(query), 300)
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [query, doSearch])
-
   async function handleOpen(result: SearchResult) {
     try {
       const content = await readFile(result.path)
@@ -59,29 +50,30 @@ export function SearchView() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b px-4 py-3">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 border-b px-4 py-3">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("search.placeholder")}
+            onKeyDown={(e) => { if (e.key === "Enter") doSearch(query) }}
+            placeholder={t("search.placeholder") + " (Enter to search)"}
             autoFocus
             className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        {!query.trim() ? (
+      <div className="flex-1 overflow-y-auto">
+        {searching ? (
+          <div className="p-4 text-center text-sm text-muted-foreground">Searching...</div>
+        ) : !hasSearched ? (
           <div className="flex flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
             <Search className="h-8 w-8 text-muted-foreground/30" />
-            <p>{t("search.startSearching")}</p>
+            <p>Press Enter to search</p>
           </div>
-        ) : searching ? (
-          <div className="p-4 text-center text-sm text-muted-foreground">Searching...</div>
         ) : results.length === 0 ? (
           <div className="p-4 text-center text-sm text-muted-foreground">
             {t("search.noResults")} <span className="font-medium">"{query}"</span>
@@ -101,7 +93,7 @@ export function SearchView() {
             ))}
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   )
 }

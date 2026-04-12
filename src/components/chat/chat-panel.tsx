@@ -214,6 +214,8 @@ export function ChatPanel() {
         }
 
         // ── Phase 2: Graph 1-level expansion ───────────────────
+        // Note: Vector search (if enabled) is already merged into searchResults
+        // by searchWiki() in search.ts — no duplicate code needed here.
         const graph = await buildRetrievalGraph(pp, dataVersion)
         const expandedIds = new Set<string>()
         const searchHitPaths = new Set(topSearchResults.map((r) => r.path))

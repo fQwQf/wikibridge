@@ -21,6 +21,7 @@ export async function autoIngest(
   sourcePath: string,
   llmConfig: LlmConfig,
   signal?: AbortSignal,
+  folderContext?: string,
 ): Promise<string[]> {
   const pp = normalizePath(projectPath)
   const sp = normalizePath(sourcePath)
@@ -68,7 +69,7 @@ export async function autoIngest(
     llmConfig,
     [
       { role: "system", content: buildAnalysisPrompt(purpose, index) },
-      { role: "user", content: `Analyze this source document:\n\n**File:** ${fileName}\n\n---\n\n${truncatedContent}` },
+      { role: "user", content: `Analyze this source document:\n\n**File:** ${fileName}${folderContext ? `\n**Folder context:** ${folderContext}` : ""}\n\n---\n\n${truncatedContent}` },
     ],
     {
       onToken: (token) => { analysis += token },
@@ -178,6 +179,28 @@ export async function autoIngest(
   // ── Step 5: Save to cache ───────────────────────────────────
   if (writtenPaths.length > 0) {
     await saveIngestCache(pp, fileName, sourceContent, writtenPaths)
+  }
+
+  // ── Step 6: Generate embeddings (if enabled) ───────────────
+  const embCfg = useWikiStore.getState().embeddingConfig
+  if (embCfg.enabled && embCfg.model && writtenPaths.length > 0) {
+    try {
+      const { embedPage } = await import("@/lib/embedding")
+      for (const wpath of writtenPaths) {
+        const pageId = wpath.split("/").pop()?.replace(/\.md$/, "") ?? ""
+        if (!pageId || ["index", "log", "overview"].includes(pageId)) continue
+        try {
+          const content = await readFile(`${pp}/${wpath}`)
+          const titleMatch = content.match(/^---\n[\s\S]*?^title:\s*["']?(.+?)["']?\s*$/m)
+          const title = titleMatch ? titleMatch[1].trim() : pageId
+          await embedPage(pp, pageId, title, content, embCfg)
+        } catch {
+          // non-critical
+        }
+      }
+    } catch {
+      // embedding module not available
+    }
   }
 
   const detail = writtenPaths.length > 0
@@ -328,6 +351,8 @@ function buildAnalysisPrompt(purpose: string, index: string): string {
     "- Any open questions worth flagging for the user?",
     "",
     "Be thorough but concise. Focus on what's genuinely important.",
+    "",
+    "If a folder context is provided, use it as a hint for categorization — the folder structure often reflects the user's organizational intent (e.g., 'papers/energy' suggests the file is an energy-related paper).",
     "",
     purpose ? `## Wiki Purpose (for context)\n${purpose}` : "",
     index ? `## Current Wiki Index (for checking existing content)\n${index}` : "",
