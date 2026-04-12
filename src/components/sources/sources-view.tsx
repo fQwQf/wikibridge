@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { invoke } from "@tauri-apps/api/core"
-import { Plus, FileText, RefreshCw, BookOpen, Trash2, FolderOpen } from "lucide-react"
+import { Plus, FileText, RefreshCw, BookOpen, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -350,8 +350,8 @@ export function SourcesView() {
             <Plus className="mr-1 h-4 w-4" />
             {importing ? t("sources.importing") : t("sources.import")}
           </Button>
-          <Button size="sm" variant="outline" onClick={handleImportFolder} disabled={importing}>
-            <FolderOpen className="mr-1 h-4 w-4" />
+          <Button size="sm" onClick={handleImportFolder} disabled={importing}>
+            <Plus className="mr-1 h-4 w-4" />
             Folder
           </Button>
         </div>
@@ -368,7 +368,7 @@ export function SourcesView() {
                 {t("sources.importFiles")}
               </Button>
               <Button variant="outline" size="sm" onClick={handleImportFolder}>
-                <FolderOpen className="mr-1 h-4 w-4" />
+                <Plus className="mr-1 h-4 w-4" />
                 Folder
               </Button>
             </div>
