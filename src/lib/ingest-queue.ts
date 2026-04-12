@@ -1,7 +1,6 @@
 import { readFile, writeFile } from "@/commands/fs"
 import { autoIngest } from "./ingest"
 import { useWikiStore } from "@/stores/wiki-store"
-import { useActivityStore } from "@/stores/activity-store"
 import { normalizePath } from "@/lib/path-utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────

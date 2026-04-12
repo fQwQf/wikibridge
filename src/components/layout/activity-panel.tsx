@@ -71,7 +71,7 @@ export function ActivityPanel() {
       setExpanded(true)
     }
     prevRunningRef.current = runningCount
-  }, [runningCount, hasQueue])
+  }, [runningCount, hasQueue, expanded])
 
   if (!hasItems && !hasQueue) return null
 

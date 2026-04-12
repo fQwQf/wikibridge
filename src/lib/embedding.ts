@@ -26,7 +26,10 @@ async function fetchEmbedding(
         input: text.slice(0, 2000),
       }),
     })
-    if (!resp.ok) return null
+    if (!resp.ok) {
+      console.warn(`[Embedding] API error: ${resp.status} ${resp.statusText}`)
+      return null
+    }
     const data = await resp.json()
     return data?.data?.[0]?.embedding ?? null
   } catch {

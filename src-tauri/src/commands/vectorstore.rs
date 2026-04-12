@@ -4,7 +4,6 @@ use arrow_array::{Float32Array, RecordBatch, StringArray, FixedSizeListArray, Ar
 use arrow_schema::{DataType, Field, Schema};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::runtime::Runtime;
 
 /// Result from vector search
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -13,20 +12,23 @@ pub struct VectorSearchResult {
     pub score: f32,
 }
 
-/// Get or create tokio runtime for async LanceDB operations
-fn get_runtime() -> &'static Runtime {
-    use std::sync::OnceLock;
-    static RT: OnceLock<Runtime> = OnceLock::new();
-    RT.get_or_init(|| {
-        Runtime::new().expect("Failed to create tokio runtime")
-    })
-}
-
 fn db_path(project_path: &str) -> String {
     format!("{}/.llm-wiki/lancedb", project_path.replace('\\', "/"))
 }
 
 const TABLE_NAME: &str = "wiki_vectors";
+
+/// Validate page_id to prevent filter injection
+fn validate_page_id(page_id: &str) -> Result<(), String> {
+    if page_id.is_empty() || page_id.len() > 256 {
+        return Err("Invalid page_id: empty or too long".to_string());
+    }
+    // Only allow alphanumeric, hyphens, underscores, dots
+    if !page_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        return Err(format!("Invalid page_id: contains disallowed characters: {}", page_id));
+    }
+    Ok(())
+}
 
 fn make_schema(dim: i32) -> Arc<Schema> {
     Arc::new(Schema::new(vec![
@@ -59,184 +61,178 @@ fn make_batch(schema: Arc<Schema>, page_id: &str, embedding: Vec<f32>, dim: i32)
 
 /// Upsert a page embedding into LanceDB
 #[tauri::command]
-pub fn vector_upsert(
+pub async fn vector_upsert(
     project_path: String,
     page_id: String,
     embedding: Vec<f32>,
 ) -> Result<(), String> {
-    let rt = get_runtime();
-    rt.block_on(async {
-        let db = connect(&db_path(&project_path))
+    validate_page_id(&page_id)?;
+
+    let db = connect(&db_path(&project_path))
+        .execute()
+        .await
+        .map_err(|e| format!("DB connect error: {e}"))?;
+
+    let dim = embedding.len() as i32;
+    let schema = make_schema(dim);
+    let batch = make_batch(schema.clone(), &page_id, embedding, dim)?;
+    let data = vec![batch];
+
+    let tables = db.table_names()
+        .execute()
+        .await
+        .map_err(|e| format!("List tables error: {e}"))?;
+
+    if tables.contains(&TABLE_NAME.to_string()) {
+        let table = db.open_table(TABLE_NAME)
             .execute()
             .await
-            .map_err(|e| format!("DB connect error: {e}"))?;
+            .map_err(|e| format!("Open table error: {e}"))?;
 
-        let dim = embedding.len() as i32;
-        let schema = make_schema(dim);
-        let batch = make_batch(schema.clone(), &page_id, embedding, dim)?;
-        let data = vec![batch];
-
-        let tables = db.table_names()
-            .execute()
-            .await
-            .map_err(|e| format!("List tables error: {e}"))?;
-
-        if tables.contains(&TABLE_NAME.to_string()) {
-            let table = db.open_table(TABLE_NAME)
-                .execute()
-                .await
-                .map_err(|e| format!("Open table error: {e}"))?;
-
-            // Delete existing entry then add new one
-            let _ = table.delete(&format!("page_id = '{}'", page_id.replace('\'', "''")))
-                .await;
-
-            table.add(data)
-                .execute()
-                .await
-                .map_err(|e| format!("Add error: {e}"))?;
-        } else {
-            db.create_table(TABLE_NAME, data)
-                .execute()
-                .await
-                .map_err(|e| format!("Create table error: {e}"))?;
+        // Delete existing entry then add new one
+        if let Err(e) = table.delete(&format!("page_id = '{}'", page_id)).await {
+            eprintln!("[vectorstore] Warning: delete before upsert failed for '{}': {}", page_id, e);
         }
 
-        Ok(())
-    })
+        table.add(data)
+            .execute()
+            .await
+            .map_err(|e| format!("Add error: {e}"))?;
+    } else {
+        db.create_table(TABLE_NAME, data)
+            .execute()
+            .await
+            .map_err(|e| format!("Create table error: {e}"))?;
+    }
+
+    Ok(())
 }
 
 /// Search for similar pages by embedding vector
 #[tauri::command]
-pub fn vector_search(
+pub async fn vector_search(
     project_path: String,
     query_embedding: Vec<f32>,
     top_k: usize,
 ) -> Result<Vec<VectorSearchResult>, String> {
-    let rt = get_runtime();
-    rt.block_on(async {
-        let db = connect(&db_path(&project_path))
-            .execute()
-            .await
-            .map_err(|e| format!("DB connect error: {e}"))?;
+    let db = connect(&db_path(&project_path))
+        .execute()
+        .await
+        .map_err(|e| format!("DB connect error: {e}"))?;
 
-        let tables = db.table_names()
-            .execute()
-            .await
-            .map_err(|e| format!("List tables error: {e}"))?;
+    let tables = db.table_names()
+        .execute()
+        .await
+        .map_err(|e| format!("List tables error: {e}"))?;
 
-        if !tables.contains(&TABLE_NAME.to_string()) {
-            return Ok(vec![]);
+    if !tables.contains(&TABLE_NAME.to_string()) {
+        return Ok(vec![]);
+    }
+
+    let table = db.open_table(TABLE_NAME)
+        .execute()
+        .await
+        .map_err(|e| format!("Open table error: {e}"))?;
+
+    let results_stream = table
+        .vector_search(query_embedding)
+        .map_err(|e| format!("Search error: {e}"))?
+        .limit(top_k)
+        .execute()
+        .await
+        .map_err(|e| format!("Execute search error: {e}"))?;
+
+    let mut search_results = Vec::new();
+
+    use futures::TryStreamExt;
+    let batches: Vec<RecordBatch> = results_stream
+        .try_collect()
+        .await
+        .map_err(|e| format!("Collect error: {e}"))?;
+
+    for batch in &batches {
+        let ids = batch
+            .column_by_name("page_id")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+            .ok_or("Missing page_id column")?;
+
+        let distances = batch
+            .column_by_name("_distance")
+            .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
+            .ok_or("Missing _distance column")?;
+
+        for i in 0..batch.num_rows() {
+            let page_id = ids.value(i).to_string();
+            let distance = distances.value(i);
+            let score = 1.0 / (1.0 + distance);
+            search_results.push(VectorSearchResult { page_id, score });
         }
+    }
 
-        let table = db.open_table(TABLE_NAME)
-            .execute()
-            .await
-            .map_err(|e| format!("Open table error: {e}"))?;
-
-        let mut results_stream = table
-            .vector_search(query_embedding)
-            .map_err(|e| format!("Search error: {e}"))?
-            .limit(top_k)
-            .execute()
-            .await
-            .map_err(|e| format!("Execute search error: {e}"))?;
-
-        let mut search_results = Vec::new();
-
-        use futures::TryStreamExt;
-        let batches: Vec<RecordBatch> = results_stream
-            .try_collect()
-            .await
-            .map_err(|e| format!("Collect error: {e}"))?;
-
-        for batch in &batches {
-            let ids = batch
-                .column_by_name("page_id")
-                .and_then(|c| c.as_any().downcast_ref::<StringArray>())
-                .ok_or("Missing page_id column")?;
-
-            let distances = batch
-                .column_by_name("_distance")
-                .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
-                .ok_or("Missing _distance column")?;
-
-            for i in 0..batch.num_rows() {
-                let page_id = ids.value(i).to_string();
-                let distance = distances.value(i);
-                let score = 1.0 / (1.0 + distance);
-                search_results.push(VectorSearchResult { page_id, score });
-            }
-        }
-
-        Ok(search_results)
-    })
+    Ok(search_results)
 }
 
 /// Delete a page from the vector index
 #[tauri::command]
-pub fn vector_delete(
+pub async fn vector_delete(
     project_path: String,
     page_id: String,
 ) -> Result<(), String> {
-    let rt = get_runtime();
-    rt.block_on(async {
-        let db = connect(&db_path(&project_path))
-            .execute()
-            .await
-            .map_err(|e| format!("DB connect error: {e}"))?;
+    validate_page_id(&page_id)?;
 
-        let tables = db.table_names()
-            .execute()
-            .await
-            .map_err(|e| format!("List tables error: {e}"))?;
+    let db = connect(&db_path(&project_path))
+        .execute()
+        .await
+        .map_err(|e| format!("DB connect error: {e}"))?;
 
-        if !tables.contains(&TABLE_NAME.to_string()) {
-            return Ok(());
-        }
+    let tables = db.table_names()
+        .execute()
+        .await
+        .map_err(|e| format!("List tables error: {e}"))?;
 
-        let table = db.open_table(TABLE_NAME)
-            .execute()
-            .await
-            .map_err(|e| format!("Open table error: {e}"))?;
+    if !tables.contains(&TABLE_NAME.to_string()) {
+        return Ok(());
+    }
 
-        let _ = table.delete(&format!("page_id = '{}'", page_id.replace('\'', "''")))
-            .await;
+    let table = db.open_table(TABLE_NAME)
+        .execute()
+        .await
+        .map_err(|e| format!("Open table error: {e}"))?;
 
-        Ok(())
-    })
+    table.delete(&format!("page_id = '{}'", page_id))
+        .await
+        .map_err(|e| format!("Delete error: {e}"))?;
+
+    Ok(())
 }
 
 /// Get count of indexed vectors
 #[tauri::command]
-pub fn vector_count(
+pub async fn vector_count(
     project_path: String,
 ) -> Result<usize, String> {
-    let rt = get_runtime();
-    rt.block_on(async {
-        let db = connect(&db_path(&project_path))
-            .execute()
-            .await
-            .map_err(|e| format!("DB connect error: {e}"))?;
+    let db = connect(&db_path(&project_path))
+        .execute()
+        .await
+        .map_err(|e| format!("DB connect error: {e}"))?;
 
-        let tables = db.table_names()
-            .execute()
-            .await
-            .map_err(|e| format!("List tables error: {e}"))?;
+    let tables = db.table_names()
+        .execute()
+        .await
+        .map_err(|e| format!("List tables error: {e}"))?;
 
-        if !tables.contains(&TABLE_NAME.to_string()) {
-            return Ok(0);
-        }
+    if !tables.contains(&TABLE_NAME.to_string()) {
+        return Ok(0);
+    }
 
-        let table = db.open_table(TABLE_NAME)
-            .execute()
-            .await
-            .map_err(|e| format!("Open table error: {e}"))?;
+    let table = db.open_table(TABLE_NAME)
+        .execute()
+        .await
+        .map_err(|e| format!("Open table error: {e}"))?;
 
-        let count = table.count_rows(None)
-            .await
-            .map_err(|e| format!("Count error: {e}"))?;
+    let count = table.count_rows(None)
+        .await
+        .map_err(|e| format!("Count error: {e}"))?;
 
-        Ok(count)
-    })
+    Ok(count)
 }

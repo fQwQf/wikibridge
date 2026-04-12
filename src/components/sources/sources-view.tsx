@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
 import { copyFile, listDirectory, readFile, writeFile, deleteFile, findRelatedWikiPages, preprocessFile } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
-import { startIngest, autoIngest } from "@/lib/ingest"
+import { startIngest } from "@/lib/ingest"
 import { enqueueIngest, enqueueBatch } from "@/lib/ingest-queue"
 import { useTranslation } from "react-i18next"
 import { normalizePath, getFileName } from "@/lib/path-utils"
@@ -352,7 +352,7 @@ export function SourcesView() {
           </Button>
           <Button size="sm" onClick={handleImportFolder} disabled={importing}>
             <Plus className="mr-1 h-4 w-4" />
-            Folder
+            {t("sources.importFolder", "Folder")}
           </Button>
         </div>
       </div>
