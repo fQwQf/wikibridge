@@ -144,9 +144,19 @@ export function ActivityPanel() {
           ))}
 
           {/* Activity items */}
-          {items.map((item) => (
-            <ActivityRow key={item.id} item={item} />
-          ))}
+          {items.map((item) => {
+            // Find matching queue task for cancel button
+            const matchingTask = item.status === "running"
+              ? queueTasks.find((t) => t.status === "processing" && getFileName(t.sourcePath) === item.title)
+              : undefined
+            return (
+              <ActivityRow
+                key={item.id}
+                item={item}
+                onCancel={matchingTask ? () => handleCancel(matchingTask.id) : undefined}
+              />
+            )
+          })}
           {items.some((i) => i.status !== "running") && (
             <button
               onClick={clearDone}
@@ -206,7 +216,7 @@ function QueueRow({ task, onRetry, onCancel }: { task: IngestTask; onRetry: (id:
   )
 }
 
-function ActivityRow({ item }: { item: ActivityItem }) {
+function ActivityRow({ item, onCancel }: { item: ActivityItem; onCancel?: () => void }) {
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
   const project = useWikiStore((s) => s.project)
 
@@ -229,6 +239,15 @@ function ActivityRow({ item }: { item: ActivityItem }) {
           <div className="font-medium">{item.title}</div>
           <div className="text-muted-foreground mt-0.5">{item.detail}</div>
         </div>
+        {item.status === "running" && onCancel && (
+          <button
+            onClick={onCancel}
+            className="shrink-0 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+            title="Cancel"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
       </div>
 
       {/* File list with types */}
