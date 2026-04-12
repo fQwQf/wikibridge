@@ -19,9 +19,8 @@ src-tauri/gen/
 # Internal docs (not shipped)
 docs/
 
-# Benchmark artifacts
-tests/fixtures/benchmark_results.json
-tests/fixtures/embed_cache.json
+# Benchmark and test data (local only)
+tests/
 
 # Editor directories and files
 .vscode/*
