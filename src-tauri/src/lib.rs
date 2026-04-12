@@ -1,3 +1,5 @@
+use tauri::Manager;
+
 mod clip_server;
 mod commands;
 mod types;
@@ -26,6 +28,30 @@ pub fn run() {
             commands::vectorstore::vector_delete,
             commands::vectorstore::vector_count,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .on_window_event(|window, event| {
+            // macOS behavior: close button hides window instead of quitting
+            // Cmd+Q still quits the app normally
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(target_os = "macos")]
+                {
+                    // Hide the window instead of closing it
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // macOS: re-show window when dock icon is clicked
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+                if !has_visible_windows {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+        });
 }
