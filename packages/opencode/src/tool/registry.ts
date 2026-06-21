@@ -48,6 +48,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
 import { Permission } from "@/permission"
+import { Kb } from "@/kb/guard"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -266,6 +267,9 @@ export const layer = Layer.effect(
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
       const filtered = (yield* all()).filter((tool) => {
+        // Knowledge base mode forbids any local command execution.
+        if (Kb.enabled() && tool.id === ShellTool.id) return false
+
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }

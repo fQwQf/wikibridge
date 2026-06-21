@@ -36,6 +36,7 @@ import {
   UpdatePayload,
 } from "../groups/session"
 import { PermissionNotFoundError } from "../errors"
+import { kbForbidden } from "./kb-mode"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -340,6 +341,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof ShellPayload.Type
     }) {
+      yield* kbForbidden()
       yield* requireSession(ctx.params.sessionID)
       return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
     })

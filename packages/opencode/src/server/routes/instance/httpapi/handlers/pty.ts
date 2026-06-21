@@ -22,6 +22,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Socket from "effect/unstable/socket/Socket"
 import { InstanceHttpApi } from "../api"
 import * as ApiError from "../errors"
+import { kbForbidden } from "./kb-mode"
 import { CursorQuery, PtyConnectApi } from "../groups/pty"
 import { WebSocketTracker } from "../websocket-tracker"
 
@@ -58,6 +59,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
     })
 
     const shells = Effect.fn("PtyHttpApi.shells")(function* () {
+      yield* kbForbidden("Terminal is disabled in knowledge base mode.")
       return yield* Effect.promise(() => Shell.list())
     })
 
@@ -67,6 +69,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
     })
 
     const create = Effect.fn("PtyHttpApi.create")(function* (ctx: { payload: typeof Pty.CreateInput.Type }) {
+      yield* kbForbidden("Terminal is disabled in knowledge base mode.")
       const cwd = ctx.payload.cwd || (yield* InstanceState.context).directory
       const shell = yield* plugin.trigger("shell.env", { cwd }, { env: {} as Record<string, string> })
       return yield* pty(

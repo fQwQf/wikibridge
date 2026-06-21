@@ -8,8 +8,24 @@ import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
 import { Effect, Layer, Option } from "effect"
 import ignore from "ignore"
 import path from "path"
+import { Kb } from "@/kb/guard"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
+
+// Synthetic top-level nodes for the knowledge base file tree. Each maps a
+// friendly, project-path-free label onto a real directory the user is allowed
+// to browse. Roots that do not live under the served directory are skipped so
+// subsequent relative `list` calls keep resolving correctly.
+function kbRoots(directory: string) {
+  const entry = (name: string, root: string) => {
+    const rel = path.relative(directory, root)
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return undefined
+    return { name, path: rel, absolute: root, type: "directory" as const, ignored: false }
+  }
+  return [entry("我的知识库", Kb.privateRoot()), entry("公开 Wiki", Kb.wikiRoot())].filter(
+    (item): item is NonNullable<typeof item> => item !== undefined,
+  )
+}
 
 export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handlers) =>
   Effect.gen(function* () {
@@ -25,6 +41,8 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
     })
 
     const findText = Effect.fn("FileHttpApi.findText")(function* (ctx: { query: { pattern: string } }) {
+      // Knowledge base mode: project-wide search would leak source files. Disabled.
+      if (Kb.enabled()) return []
       return (yield* ripgrep
         .grep({ cwd: (yield* InstanceState.context).directory, pattern: ctx.query.pattern, limit: 10 })
         .pipe(Effect.orDie)).map((match) => ({
@@ -43,6 +61,8 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
     const findFile = Effect.fn("FileHttpApi.findFile")(function* (ctx: {
       query: { query: string; dirs?: "true" | "false"; type?: "file" | "directory"; limit?: number }
     }) {
+      // Knowledge base mode: project-wide fuzzy file search would leak source files. Disabled.
+      if (Kb.enabled()) return []
       const directory = (yield* InstanceState.context).directory
       const limit = ctx.query.limit ?? 10
       const type = ctx.query.type ?? (ctx.query.dirs === "false" ? "file" : undefined)
@@ -65,6 +85,18 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
 
     const list = Effect.fn("FileHttpApi.list")(function* (ctx: { query: { path: string } }) {
       const directory = (yield* InstanceState.context).directory
+      // Knowledge base mode: the file tree only ever exposes two roots — the
+      // current user's private knowledge base and the public (read-only) wiki.
+      if (Kb.enabled()) {
+        const requested = path.resolve(directory, ctx.query.path)
+        const denied = Kb.deny(requested, "read")
+        if (denied) {
+          // The tree's top-level request (project root) is replaced by the two
+          // synthetic KB roots; anything else outside the KB is simply empty.
+          if (requested === directory) return kbRoots(directory)
+          return []
+        }
+      }
       return yield* filesystem(
         Effect.gen(function* () {
           const fs = yield* FileSystem.Service
@@ -97,6 +129,8 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       const directory = (yield* InstanceState.context).directory
       const file = path.resolve(directory, ctx.query.path)
       if (!FSUtil.contains(directory, file)) return yield* Effect.die(new Error("Path escapes the location"))
+      // Knowledge base mode: only serve file content from the allowed KB roots.
+      if (Kb.enabled() && Kb.deny(file, "read")) return yield* Effect.die(new Error("Access denied (knowledge base mode)"))
       if (!(yield* FSUtil.Service.use((fs) => fs.existsSafe(file)))) return { type: "text" as const, content: "" }
       return yield* filesystem(
         FileSystem.Service.use((fs) => fs.read({ path: RelativePath.make(ctx.query.path) })),

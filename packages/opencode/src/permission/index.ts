@@ -7,6 +7,7 @@ import os from "os"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
+import { Kb } from "@/kb/guard"
 
 export const Event = {
   Asked: EventV2.define({ type: "permission.asked", schema: PermissionV1.Request.fields }),
@@ -78,6 +79,14 @@ export const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       const { ruleset, ...request } = input
+
+      // Knowledge base mode: never allow local command execution. Deny shell /
+      // bash / terminal style permissions outright, regardless of configured rules.
+      if (Kb.isBlockedPermission(request.permission)) {
+        yield* Effect.logInfo("kb mode denied permission", { permission: request.permission })
+        return yield* new PermissionV1.DeniedError({ ruleset: [] })
+      }
+
       let needsAsk = false
 
       for (const pattern of request.patterns) {

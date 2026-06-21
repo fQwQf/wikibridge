@@ -2,7 +2,7 @@ import { MCP } from "@/mcp"
 import { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { McpServerNotFoundError } from "../errors"
+import { ForbiddenError, McpServerNotFoundError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
@@ -56,7 +56,7 @@ export const McpApi = HttpApi.make("mcp")
           query: WorkspaceRoutingQuery,
           payload: AddPayload,
           success: described(StatusMap, "MCP server added successfully"),
-          error: HttpApiError.BadRequest,
+          error: [HttpApiError.BadRequest, ForbiddenError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "mcp.add",

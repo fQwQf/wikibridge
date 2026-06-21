@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { McpServerNotFoundError } from "../errors"
+import { kbForbidden } from "./kb-mode"
 import { AddPayload, AuthCallbackPayload, StatusMap, UnsupportedOAuthError } from "../groups/mcp"
 
 export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handlers) =>
@@ -14,6 +15,7 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
     })
 
     const add = Effect.fn("McpHttpApi.add")(function* (ctx: { payload: typeof AddPayload.Type }) {
+      yield* kbForbidden("Adding MCP servers is disabled in knowledge base mode.")
       const result = (yield* mcp.add(ctx.payload.name, ctx.payload.config)).status
       return yield* Schema.decodeUnknownEffect(StatusMap)(
         "status" in result ? { [ctx.payload.name]: result } : result,

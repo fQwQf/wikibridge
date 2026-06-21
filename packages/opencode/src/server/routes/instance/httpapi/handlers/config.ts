@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { markInstanceForDisposal } from "../lifecycle"
+import { kbForbidden } from "./kb-mode"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
@@ -16,6 +17,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     })
 
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
+      yield* kbForbidden("Config mutation is disabled in knowledge base mode.")
       yield* configSvc.update(ctx.payload)
       yield* markInstanceForDisposal(yield* InstanceState.context)
       return ctx.payload

@@ -11,7 +11,7 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { PtyForbiddenError, PtyNotFoundError } from "../errors"
+import { ForbiddenError, PtyForbiddenError, PtyNotFoundError } from "../errors"
 import { described } from "./metadata"
 
 const root = "/pty"
@@ -44,6 +44,7 @@ export const PtyApi = HttpApi.make("pty")
         HttpApiEndpoint.get("shells", PtyPaths.shells, {
           query: WorkspaceRoutingQuery,
           success: described(Schema.Array(ShellItem), "List of shells"),
+          error: ForbiddenError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "pty.shells",
@@ -65,7 +66,7 @@ export const PtyApi = HttpApi.make("pty")
           query: WorkspaceRoutingQuery,
           payload: Pty.CreateInput,
           success: described(Pty.Info, "Created session"),
-          error: HttpApiError.BadRequest,
+          error: [HttpApiError.BadRequest, ForbiddenError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "pty.create",

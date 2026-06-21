@@ -20,7 +20,7 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError, PermissionNotFoundError, SessionBusyError } from "../errors"
+import { ApiNotFoundError, ForbiddenError, PermissionNotFoundError, SessionBusyError } from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -358,7 +358,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: ShellPayload,
           success: described(SessionV1.WithParts, "Created message"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, ForbiddenError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.shell",

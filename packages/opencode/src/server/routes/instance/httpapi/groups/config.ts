@@ -2,6 +2,7 @@ import { Config } from "@/config/config"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Provider } from "@/provider/provider"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { ForbiddenError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
@@ -27,7 +28,7 @@ export const ConfigApi = HttpApi.make("config")
           query: WorkspaceRoutingQuery,
           payload: ConfigV1.Info,
           success: described(ConfigV1.Info, "Successfully updated config"),
-          error: HttpApiError.BadRequest,
+          error: [HttpApiError.BadRequest, ForbiddenError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "config.update",
