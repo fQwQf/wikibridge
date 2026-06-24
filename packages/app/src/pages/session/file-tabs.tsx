@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -14,6 +14,7 @@ import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { showToast } from "@/utils/toast"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { useComments } from "@/context/comments"
+import { kbMode, isWikiPath, isPrivatePath } from "@/context/kb"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { getSessionHandoff } from "@/pages/session/handoff"
@@ -396,6 +397,16 @@ export function FileTabContent(props: { tab: string }) {
 
   const renderFile = (source: string) => (
     <div class="relative overflow-hidden pb-40">
+      <Show when={kbMode() && isWikiPath(path() ?? "")}>
+        <div class="px-6 py-1.5 text-xs text-text-weak bg-surface-base-active border-b border-border-base">
+          公开 Wiki，只读
+        </div>
+      </Show>
+      <Show when={kbMode() && isPrivatePath(path() ?? "")}>
+        <div class="px-6 py-1.5 text-xs text-text-weak bg-surface-base-active border-b border-border-base">
+          我的知识库
+        </div>
+      </Show>
       <Dynamic
         component={fileComponent}
         mode="text"

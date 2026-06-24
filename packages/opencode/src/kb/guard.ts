@@ -46,6 +46,15 @@ export function wikiRoot(): string {
   return path.join(dataDir(), "wiki")
 }
 
+/** Roots expressed relative to the process CWD (the served project directory). */
+export function privateRelative(): string {
+  return path.relative(process.cwd(), privateRoot())
+}
+
+export function wikiRelative(): string {
+  return path.relative(process.cwd(), wikiRoot())
+}
+
 /** Virtual roots exposed to the web UI so it never sees the real project path. */
 export const VIRTUAL = {
   private: "kb://private/",

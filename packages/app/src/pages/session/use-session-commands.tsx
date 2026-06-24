@@ -12,6 +12,7 @@ import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
+import { kbMode } from "@/context/kb"
 import { showToast } from "@/utils/toast"
 import { findLast } from "@opencode-ai/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
@@ -577,10 +578,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     ...fileCmds(),
     ...contextCmds(),
     ...viewCmds(),
-    ...terminalCmds(),
+    ...(kbMode() ? [] : terminalCmds()),
     ...messageCmds(),
     ...modelCmds(),
-    ...mcpCmds(),
+    ...(kbMode() ? [] : mcpCmds()),
     ...agentCmds(),
     ...permissionsCmds(),
   ])

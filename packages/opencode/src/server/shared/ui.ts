@@ -3,8 +3,27 @@ import { Effect, Stream } from "effect"
 import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
 import { ProxyUtil } from "../proxy-util"
+import { Kb } from "@/kb/guard"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
+
+// In knowledge base mode, advertise the flag (and current user) to the web UI
+// via <meta> tags so the SPA can adapt — hide terminal/MCP/config entries and
+// mark the public wiki read-only. Meta tags need no script-src CSP allowance.
+function escapeAttr(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+export function injectKbMeta(html: string) {
+  if (!Kb.enabled()) return html
+  const tags =
+    `<meta name="opencode-kb-mode" content="1">` +
+    `<meta name="opencode-kb-user" content="${escapeAttr(Kb.userId())}">` +
+    `<meta name="opencode-kb-private" content="${escapeAttr(Kb.privateRelative())}">` +
+    `<meta name="opencode-kb-wiki" content="${escapeAttr(Kb.wikiRelative())}">`
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (match) => match + tags)
+  return tags + html
+}
 
 export const UI_UPSTREAM = new URL("https://app.opencode.ai")
 
@@ -56,7 +75,9 @@ function embeddedUIResponse(file: string, body: Uint8Array) {
   const mime = FSUtil.mimeType(file)
   const headers = new Headers({ "content-type": mime })
   if (mime.startsWith("text/html")) {
-    headers.set("content-security-policy", cspForHtml(new TextDecoder().decode(body)))
+    const html = injectKbMeta(new TextDecoder().decode(body))
+    headers.set("content-security-policy", cspForHtml(html))
+    return HttpServerResponse.text(html, { headers })
   }
   return HttpServerResponse.raw(body, { headers })
 }
@@ -94,7 +115,7 @@ export function serveUIEffect(
     const headers = proxyResponseHeaders(response.headers)
 
     if (response.headers["content-type"]?.includes("text/html")) {
-      const body = yield* response.text
+      const body = injectKbMeta(yield* response.text)
       headers.set("Content-Security-Policy", cspForHtml(body))
       return HttpServerResponse.text(body, { status: response.status, headers })
     }
