@@ -334,17 +334,38 @@ pub fn rescan_project_files(
     source_watch_config: Option<SourceWatchConfig>,
 ) -> Result<FileChangeRescanResult, String> {
     run_guarded("rescan_project_files", || {
-        let root = PathBuf::from(project_path);
-        let source_watch_config = normalize_source_watch_config(source_watch_config);
-        ensure_sync_dir(&root)?;
-        enqueue_rescan_changes(&root, &project_id, &source_watch_config)?;
-        let changed_tasks = process_queue(&app, &root, &project_id)?;
-        let queue = with_queue_lock(&root, || read_queue(&root))?;
-        emit_queue(&app, &project_id, &queue);
-        Ok(FileChangeRescanResult {
-            queue,
-            changed_tasks,
-        })
+        rescan_project_files_inner(Some(&app), project_id, project_path, source_watch_config)
+    })
+}
+
+pub fn rescan_project_files_headless(
+    project_id: String,
+    project_path: String,
+    source_watch_config: Option<SourceWatchConfig>,
+) -> Result<FileChangeRescanResult, String> {
+    run_guarded("rescan_project_files_headless", || {
+        rescan_project_files_inner(None, project_id, project_path, source_watch_config)
+    })
+}
+
+fn rescan_project_files_inner(
+    app: Option<&AppHandle>,
+    project_id: String,
+    project_path: String,
+    source_watch_config: Option<SourceWatchConfig>,
+) -> Result<FileChangeRescanResult, String> {
+    let root = PathBuf::from(project_path);
+    let source_watch_config = normalize_source_watch_config(source_watch_config);
+    ensure_sync_dir(&root)?;
+    enqueue_rescan_changes(&root, &project_id, &source_watch_config)?;
+    let changed_tasks = process_queue_optional(app, &root, &project_id)?;
+    let queue = with_queue_lock(&root, || read_queue(&root))?;
+    if let Some(app) = app {
+        emit_queue(app, &project_id, &queue);
+    }
+    Ok(FileChangeRescanResult {
+        queue,
+        changed_tasks,
     })
 }
 
@@ -802,6 +823,17 @@ fn process_queue(
         |queue| emit_queue(app, project_id, queue),
         |tasks| emit_changed_batch(app, project_id, tasks),
     )
+}
+
+fn process_queue_optional(
+    app: Option<&AppHandle>,
+    root: &Path,
+    project_id: &str,
+) -> Result<Vec<FileChangeTask>, String> {
+    match app {
+        Some(app) => process_queue(app, root, project_id),
+        None => process_queue_inner(root, project_id, |_| {}, |_| {}),
+    }
 }
 
 fn process_queue_inner(

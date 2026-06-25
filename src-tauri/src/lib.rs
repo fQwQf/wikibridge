@@ -1,4 +1,5 @@
 mod api_server;
+pub mod api_state;
 mod clip_server;
 mod commands;
 mod panic_guard;
@@ -7,8 +8,10 @@ mod tray;
 mod types;
 
 use panic_guard::run_guarded;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
+
+pub use api_state::HeadlessConfig;
 
 struct CloseBehaviorState(Mutex<String>);
 struct TrayAvailabilityState(Mutex<bool>);
@@ -184,7 +187,9 @@ pub fn run() {
             app.manage(TrayAvailabilityState(Mutex::new(false)));
             // Start the API before optional desktop integrations so the
             // backend is reachable if tray setup or another integration fails.
-            api_server::start_api_server(app.handle().clone());
+            api_server::start_api_server(Arc::new(api_state::TauriApiState::new(
+                app.handle().clone(),
+            )));
             let tray_available = match tray::create_tray(app.handle()) {
                 Ok(()) => true,
                 Err(err) => {
@@ -324,4 +329,12 @@ pub fn run() {
             }
             let _ = (app, event); // suppress unused warnings on non-macOS
         });
+}
+
+pub fn run_headless(config: HeadlessConfig) {
+    let state = Arc::new(api_state::HeadlessApiState::new(config));
+    api_server::start_api_server(state);
+    loop {
+        std::thread::park();
+    }
 }

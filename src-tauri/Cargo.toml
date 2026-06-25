@@ -15,6 +15,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "llm-wiki"
 path = "src/main.rs"
 
+[[bin]]
+name = "llm-wiki-server"
+path = "src/bin/server.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -65,6 +69,8 @@ walkdir = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+tempfile = "3"
+ureq = "2"
 
 [profile.release]
 codegen-units = 1
