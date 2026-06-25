@@ -4,3 +4,7 @@
 [submodule "llm_wiki"]
 	path = llm_wiki
 	url = https://github.com/fQwQf/llm_wiki.git
+[submodule "bearfrp"]
+	path = bearfrp
+	url = git@github.com:stephen-zeng/whu-os.git
+	branch = frp

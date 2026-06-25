@@ -68,11 +68,86 @@ services:
     depends_on:
       - opencode
 
+  bearfrp:
+    build:
+      context: ./bearfrp
+      dockerfile: ../docker/bearfrp/Dockerfile
+    environment:
+      BEARFRPS_START_FRPS: "1"
+      SERVER_PUBLIC_HOST: ${BEARFRP_PUBLIC_HOST:-localhost}
+      BACKEND_PORT: 8000
+      FRPS_VERSION: ${BEARFRP_FRPS_VERSION:-v0.58.1}
+      FRPS_BIND_PORT: ${BEARFRP_BIND_PORT:-7000}
+      FRPS_ADMIN_API_URL: http://127.0.0.1:7500
+      FRPS_ADMIN_USER: ${BEARFRP_FRPS_ADMIN_USER:-admin}
+      FRPS_ADMIN_PASSWORD: ${BEARFRP_FRPS_ADMIN_PASSWORD:-change-me}
+      FRPS_AUTH_TOKEN: ${BEARFRP_FRPS_AUTH_TOKEN:-change-me}
+      FRPS_VHOST_HTTP_PORT: ${BEARFRP_HTTP_VHOST_PORT:-8080}
+      FRPS_PUBLIC_VHOST_HTTP_PORT: ${BEARFRP_HTTP_VHOST_PORT:-8080}
+      FRPS_SUBDOMAIN_HOST: ${BEARFRP_SUBDOMAIN_HOST:-}
+      REMOTE_PORT_RANGE_START: ${BEARFRP_TCP_PORT_START:-50000}
+      REMOTE_PORT_RANGE_END: ${BEARFRP_TCP_PORT_END:-50100}
+      ALLOCATABLE_PORT_RANGE_START: ${BEARFRP_TCP_PORT_START:-50000}
+      ALLOCATABLE_PORT_RANGE_END: ${BEARFRP_TCP_PORT_END:-50100}
+      DEFAULT_LOCAL_PORT: ${WIKIBRIDGE_HTTP_PORT:-80}
+      DEFAULT_SPEED_LIMIT_KBPS: ${BEARFRP_DEFAULT_SPEED_LIMIT_KBPS:-1024}
+      FREE_RECHARGE_AMOUNT_MB: ${BEARFRP_FREE_RECHARGE_AMOUNT_MB:-100}
+      ADMIN_USERNAME: ${BEARFRP_ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${BEARFRP_ADMIN_PASSWORD:-change-me}
+      MAX_CONNECTIONS_PER_USER: ${BEARFRP_MAX_CONNECTIONS_PER_USER:-3}
+      DEMO_BIN_BASE_URL: ${BEARFRP_DEMO_BIN_BASE_URL:-}
+    ports:
+      - "${BEARFRP_BACKEND_PORT:-8000}:8000"
+      - "${BEARFRP_BIND_PORT:-7000}:${BEARFRP_BIND_PORT:-7000}"
+      - "${BEARFRP_HTTP_VHOST_PORT:-8080}:${BEARFRP_HTTP_VHOST_PORT:-8080}"
+      - "${BEARFRP_TCP_PORT_START:-50000}-${BEARFRP_TCP_PORT_END:-50100}:${BEARFRP_TCP_PORT_START:-50000}-${BEARFRP_TCP_PORT_END:-50100}"
+    volumes:
+      - bearfrp-config:/app/config
+      - bearfrp-frps:/app/frps
+    networks:
+      - wikibridge
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/show/online >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  bearfrp-wikibridge-frpc:
+    build:
+      context: ./docker/bearfrp-wikibridge-frpc
+      dockerfile: Dockerfile
+    environment:
+      BEARFRP_API_URL: http://bearfrp:8000
+      BEARFRP_FRPS_VERSION: ${BEARFRP_FRPS_VERSION:-v0.58.1}
+      BEARFRP_FRPC_SERVER_ADDR: bearfrp
+      BEARFRP_FRPC_SERVER_PORT: ${BEARFRP_BIND_PORT:-7000}
+      WIKIBRIDGE_BEARFRP_USER: ${WIKIBRIDGE_BEARFRP_USER:-wikibridge}
+      WIKIBRIDGE_BEARFRP_PASSWORD: ${WIKIBRIDGE_BEARFRP_PASSWORD:-wikibridge-change-me-in-production}
+      WIKIBRIDGE_BEARFRP_PROXY_NAME: ${WIKIBRIDGE_BEARFRP_PROXY_NAME:-wikibridge}
+      WIKIBRIDGE_BEARFRP_PROXY_TYPE: ${WIKIBRIDGE_BEARFRP_PROXY_TYPE:-tcp}
+      WIKIBRIDGE_BEARFRP_LOCAL_IP: nginx
+      WIKIBRIDGE_BEARFRP_LOCAL_PORT: 80
+      WIKIBRIDGE_BEARFRP_SUBDOMAIN: ${WIKIBRIDGE_BEARFRP_SUBDOMAIN:-wikibridge}
+      WIKIBRIDGE_BEARFRP_TRAFFIC_MB: ${WIKIBRIDGE_BEARFRP_TRAFFIC_MB:-100}
+      WIKIBRIDGE_BEARFRP_SPEED_LIMIT_KBPS: ${WIKIBRIDGE_BEARFRP_SPEED_LIMIT_KBPS:-1024}
+    volumes:
+      - bearfrp-wikibridge-frpc:/state
+    networks:
+      - wikibridge
+    depends_on:
+      bearfrp:
+        condition: service_healthy
+      nginx:
+        condition: service_started
+
 volumes:
   llm-wiki-data:
   opencode-data:
   opencode-node-modules:
   opencode-tmp:
+  bearfrp-config:
+  bearfrp-frps:
+  bearfrp-wikibridge-frpc:
 
 networks:
   wikibridge:
