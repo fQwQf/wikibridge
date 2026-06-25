@@ -1,0 +1,78 @@
+services:
+  llm-wiki:
+    build:
+      context: ./llm_wiki
+      dockerfile: Dockerfile
+    environment:
+      LLM_WIKI_DATA_DIR: /data
+      LLM_WIKI_BIND: 0.0.0.0
+      LLM_WIKI_PORT: 19828
+      LLM_WIKI_TOKEN: ${LLM_WIKI_TOKEN:-}
+    volumes:
+      - llm-wiki-data:/data
+    networks:
+      - wikibridge
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19828/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opencode:
+    image: oven/bun:1.3.14
+    working_dir: /app
+    environment:
+      OPENCODE_KB_MODE: "1"
+      OPENCODE_KB_DATA_DIR: /data
+      OPENCODE_KB_USER: default
+      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-}
+      LLM_WIKI_BASE_URL: http://llm-wiki:19828/api/v1
+      LLM_WIKI_TOKEN: ${LLM_WIKI_TOKEN:-}
+    volumes:
+      - ./opencode:/app
+      - opencode-data:/data
+      - opencode-node-modules:/app/node_modules
+      - opencode-tmp:/tmp
+    networks:
+      - wikibridge
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -d /app/node_modules/.bin ]; then
+          echo "Installing dependencies..."
+          bun install --frozen-lockfile
+        fi
+        bash scripts/init-kb-data.sh
+        echo "Building embedded web UI..."
+        bun run --cwd packages/app build
+        bun run scripts/prepare-embedded-ui.ts
+        bun run --conditions=browser ./src/index.ts web --hostname 0.0.0.0 --port 4096
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4096/global/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      llm-wiki:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "${WIKIBRIDGE_HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - wikibridge
+    depends_on:
+      - opencode
+
+volumes:
+  llm-wiki-data:
+  opencode-data:
+  opencode-node-modules:
+  opencode-tmp:
+
+networks:
+  wikibridge:
